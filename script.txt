@@ -1,0 +1,271 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define LISTEN_PORT 8080
+#define MAX_BUFFER_SIZE 1024
+
+// Function to parse the header and extract the next server's IP and port
+int parseHeader(char *header, char *nextServerIP, int *nextServerPort) {
+    if (sscanf(header, "%s %d", nextServerIP, nextServerPort) == 2) {
+        return 1; // Successfully parsed the header
+    }
+    return 0; // Failed to parse the header
+}
+
+int main() {
+    int listen_fd, new_socket;
+    struct sockaddr_in listen_address, next_server_address;
+    int addrlen = sizeof(listen_address);
+    char buffer[MAX_BUFFER_SIZE];
+    char nextServerIP[16]; // Assuming IPv4
+    int nextServerPort;
+
+    // Create a socket to listen for incoming connections
+    if ((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set up the address to listen on
+    listen_address.sin_family = AF_INET;
+    listen_address.sin_addr.s_addr = INADDR_ANY;
+    listen_address.sin_port = htons(LISTEN_PORT);
+
+    // Bind the socket to the specified address and port
+    if (bind(listen_fd, (struct sockaddr *)&listen_address, sizeof(listen_address)) < 0) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Listen for incoming connections
+    if (listen(listen_fd, 3) < 0) {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Listening on port %d...\n", LISTEN_PORT);
+
+    // Accept incoming connections and redirect data
+    while (1) {
+        if ((new_socket = accept(listen_fd, (struct sockaddr *)&listen_address, (socklen_t *)&addrlen)) < 0) {
+            perror("Accept failed");
+            exit(EXIT_FAILURE);
+        }
+
+        // Read the header from the client
+        int valread = read(new_socket, buffer, MAX_BUFFER_SIZE);
+
+        if (valread <= 0) {
+            close(new_socket);
+            continue; // Skip empty or erroneous data
+        }
+
+        // Parse the header to extract the next server's IP and port
+        if (parseHeader(buffer, nextServerIP, &nextServerPort)) {
+            // Create a socket to connect to the next server
+            int next_server_fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (next_server_fd == -1) {
+                perror("Next server socket creation failed");
+                close(new_socket);
+                continue;
+            }
+
+            // Set up the address of the next server
+            next_server_address.sin_family = AF_INET;
+            next_server_address.sin_port = htons(nextServerPort);
+            if (inet_pton(AF_INET, nextServerIP, &next_server_address.sin_addr) <= 0) {
+                perror("Invalid IP address");
+                close(new_socket);
+                close(next_server_fd);
+                continue;
+            }
+
+            // Connect to the next server
+            if (connect(next_server_fd, (struct sockaddr *)&next_server_address, sizeof(next_server_address)) < 0) {
+                perror("Next server connection failed");
+                close(new_socket);
+                close(next_server_fd);
+                continue;
+            }
+
+            // Forward data from the client to the next server
+            write(next_server_fd, buffer, valread);
+
+            // Forward data from the next server back to the client
+            int bytes_received = 0;
+            while ((bytes_received = read(next_server_fd, buffer, MAX_BUFFER_SIZE)) > 0) {
+                write(new_socket, buffer, bytes_received);
+            }
+
+            // Close the connections
+            close(new_socket);
+            close(next_server_fd);
+        } else {
+            // Header parsing failed
+            printf("Failed to parse header.\n");
+            close(new_socket);
+        }
+    }
+
+    return 0;
+}
+//////////////////////
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8080
+#define MAX_BUFFER_SIZE 1024
+
+// Function to process data based on the header
+void processHeader(char *header) {
+    if (strchr(header, '!') || strchr(header, '#')) {
+        // Do something when '!' or '#' is found in the header
+        printf("Header contains '!' or '#'. Performing some action...\n");
+        // Your code to handle this case goes here.
+    } else {
+        // Do something when '!' or '#' is not found in the header
+        printf("Header does not contain '!' or '#'.\n");
+        // Your code for the other case goes here.
+    }
+}
+
+int main() {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+    char buffer[MAX_BUFFER_SIZE] = {0};
+
+    // Create a socket
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set up the server address
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    // Bind the socket to the specified address and port
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Listen for incoming connections
+    if (listen(server_fd, 3) < 0) {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Listening on port %d...\n", PORT);
+
+    // Accept incoming connections and process data
+    while (1) {
+        if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen)) < 0) {
+            perror("Accept failed");
+            exit(EXIT_FAILURE);
+        }
+
+        // Read data from the client
+        int valread = read(new_socket, buffer, MAX_BUFFER_SIZE);
+
+        if (valread <= 0) {
+            close(new_socket);
+            continue; // Skip empty or erroneous data
+        }
+
+        // Assuming the header is at the beginning of the received data
+        processHeader(buffer);
+
+        // Close the connection
+        close(new_socket);
+    }
+
+    return 0;
+}
+
+
+//////////////
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#define MAX_BUFFER_SIZE 65536
+#define REDIRECT_CHARACTER '!'
+#define FINAL_SERVER_CHARACTER '#'
+
+// Function to parse the packet data
+void parsePacketData(char *packetData, int packetLength) {
+    // Assuming packetData is an IP packet with TCP payload
+    struct ip *ipHeader = (struct ip *)packetData;
+    struct tcphdr *tcpHeader = (struct tcphdr *)(packetData + ipHeader->ip_hl * 4);
+
+    // Check if the packet contains the '!' character
+    char *payload = packetData + ipHeader->ip_hl * 4 + tcpHeader->th_off * 4;
+    int payloadLength = packetLength - (ipHeader->ip_hl * 4 + tcpHeader->th_off * 4);
+
+    if (memchr(payload, REDIRECT_CHARACTER, payloadLength) != NULL) {
+        // Extract the next server's IP and port
+        char nextServerIP[16]; // Assuming IPv4
+        int nextServerPort;
+
+        // Parse the data after the '!'
+        char *nextServerData = strchr(payload, REDIRECT_CHARACTER) + 1;
+        if (sscanf(nextServerData, "%s %d", nextServerIP, &nextServerPort) == 2) {
+            // Forward data to the next server (nextServerIP, nextServerPort)
+            printf("Forwarding to the next server: IP=%s, Port=%d\n", nextServerIP, nextServerPort);
+            // Add your code here to forward the data to the next server.
+        } else {
+            printf("Invalid format after '!'\n");
+        }
+    } else if (memchr(payload, FINAL_SERVER_CHARACTER, payloadLength) != NULL) {
+        // This is the final server, handle it accordingly
+        printf("Packet redirected to the final server.\n");
+        // Add your code here to handle the final server.
+    } else {
+        printf("Unknown packet content.\n");
+    }
+}
+
+int main() {
+    int sock, packetLength;
+    char buffer[MAX_BUFFER_SIZE];
+
+    // Create a raw socket to capture packets
+    sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    while (1) {
+        packetLength = recv(sock, buffer, MAX_BUFFER_SIZE, 0);
+        if (packetLength < 0) {
+            perror("Packet reception error");
+            exit(EXIT_FAILURE);
+        }
+
+        // Parse and handle the received packet data
+        parsePacketData(buffer, packetLength);
+    }
+
+    return 0;
+}
