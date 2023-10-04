@@ -376,113 +376,400 @@ int main() {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
-#include <netinet/if_ether.h>
-#include <net/if.h>
-#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
-#define INTERFACE_NAME "eth0"
-#define MAX_PACKET_SIZE 65536
+#define PACKET_SIZE 4096
 
-// Function to process and redirect packet data
-void process_packet(char *packet, int packet_length) {
-    char *payload = packet + 14; // Skip Ethernet header (14 bytes)
-
-    for (int i = 0; i < packet_length; i++) {
-        switch (payload[i]) {
-            case '!': {
-                // Check if there is another '!' or '#' in the payload
-                char *next_delimiter = strchr(payload + i + 1, '!');
-                char *final_server = strchr(payload + i + 1, '#');
-
-                if (next_delimiter != NULL && final_server != NULL) {
-                    // Extract the next server's IP and port
-                    char nextServerIP[16]; // Assuming IPv4
-                    int nextServerPort;
-
-                    if (sscanf(payload + i + 1, "%15s %d", nextServerIP, &nextServerPort) == 2) {
-                        printf("Forwarding to the next server: IP=%s, Port=%d\n", nextServerIP, nextServerPort);
-
-                        // Calculate the length of the remaining payload after stripping
-                        int remaining_length = packet_length - (next_delimiter - packet) - 1;
-
-                        // Move the remaining data to the beginning of the packet
-                        memmove(payload + i, next_delimiter + 1, remaining_length);
-
-                        // Update the packet length
-                        packet_length = remaining_length + 14;
-
-                        // Implement code to send the packet to the next server
-                    } else {
-                        printf("Invalid format after '!'\n");
-                    }
-                } else if (final_server != NULL) {
-                    printf("Packet redirected to the final server.\n");
-                    // Implement final server handling logic here
-                    return; // No more processing needed
-                }
-                break;
-            }
-            case '#':
-                // Implement code for '#' character
-                printf("Found '#' character. Performing action for '#'\n");
-                break;
-            case '*':
-                // Implement code for '*' character
-                printf("Found '*' character. Performing action for '*'\n");
-                break;
-            case '$':
-                // Implement code for '$' character
-                printf("Found '$' character. Performing action for '$'\n");
-                break;
-            default:
-                // Handle other characters or do nothing
-                break;
-        }
-    }
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
 }
 
-int main() {
-    int raw_socket;
-    char buffer[MAX_PACKET_SIZE];
-    struct ifreq ifr;
-
-    raw_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-    if (raw_socket == -1) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
+int main(int argc, char *argv[]) {
+    if (argc != 7) {
+        fprintf(stderr, "Usage: %s <listen_ip> <listen_port> <src_ip> <src_port> <dest_ip> <dest_port>\n", argv[0]);
+        exit(1);
     }
 
-    memset(&ifr, 0, sizeof(struct ifreq));
-    strncpy(ifr.ifr_name, INTERFACE_NAME, IFNAMSIZ - 1);
+    const char *listen_ip = argv[1];
+    int listen_port = atoi(argv[2]);
+    const char *src_ip = argv[3];
+    int src_port = atoi(argv[4]);
+    const char *dest_ip = argv[5];
+    int dest_port = atoi(argv[6]);
 
-    if (ioctl(raw_socket, SIOCGIFFLAGS, &ifr) == -1) {
-        perror("Failed to set interface to promiscuous mode");
-        close(raw_socket);
-        exit(EXIT_FAILURE);
+    // Create a raw socket to intercept packets
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sockfd == -1) {
+        error("Socket creation error");
     }
 
-    ifr.ifr_flags |= IFF_PROMISC;
-    if (ioctl(raw_socket, SIOCSIFFLAGS, &ifr) == -1) {
-        perror("Failed to set interface to promiscuous mode");
-        close(raw_socket);
-        exit(EXIT_FAILURE);
-    }
+    char packet[PACKET_SIZE];
+    ssize_t packet_size;
 
     while (1) {
-        int packet_length = recv(raw_socket, buffer, sizeof(buffer), 0);
-        if (packet_length < 0) {
-            perror("Packet reception error");
-            break;
+        packet_size = recv(sockfd, packet, PACKET_SIZE, 0);
+        if (packet_size == -1) {
+            error("Packet reception error");
         }
-        process_packet(buffer, packet_length);
+
+        struct ip *ip_header = (struct ip *)packet;
+        struct tcphdr *tcp_header = (struct tcphdr *)(packet + (ip_header->ip_hl << 2));
+
+        // Check if the packet's source IP and source port match the provided values
+        if (strcmp(inet_ntoa(ip_header->ip_src), src_ip) == 0 && ntohs(tcp_header->th_sport) == src_port) {
+            // Modify destination IP and port
+            ip_header->ip_dst.s_addr = inet_addr(dest_ip);
+            tcp_header->th_dport = htons(dest_port);
+
+            // Recalculate IP checksum
+            ip_header->ip_sum = 0;
+            ip_header->ip_sum = htons(~(ip_header->ip_sum));
+
+            // Recalculate TCP checksum
+            tcp_header->th_sum = 0;
+            tcp_header->th_sum = htons(~(tcp_header->th_sum));
+
+            // Send the modified packet to the new destination
+            struct sockaddr_in dest_addr;
+            memset(&dest_addr, 0, sizeof(dest_addr));
+            dest_addr.sin_family = AF_INET;
+            dest_addr.sin_addr.s_addr = ip_header->ip_dst.s_addr;
+            dest_addr.sin_port = tcp_header->th_dport;
+
+            if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+                error("Packet sendto error");
+            }
+            
+            printf("Redirected packet from %s:%d to %s:%d\n", src_ip, src_port, dest_ip, dest_port);
+        }
     }
 
-    close(raw_socket);
+    close(sockfd);
     return 0;
 }
+
+/////////////////////////////////
+
+
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+#define PACKET_SIZE 4096
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 9) {
+        fprintf(stderr, "Usage: %s <listen_ip> <listen_port> <src_ip> <src_port> <dest_ip> <dest_port> <protocol (TCP/UDP)> <loop_duration>\n", argv[0]);
+        exit(1);
+    }
+
+    const char *listen_ip = argv[1];
+    int listen_port = atoi(argv[2]);
+    const char *src_ip = argv[3];
+    int src_port = atoi(argv[4]);
+    const char *dest_ip = argv[5];
+    int dest_port = atoi(argv[6]);
+    const char *protocol = argv[7];
+    int loop_duration = atoi(argv[8]);
+
+    // Create a raw socket to intercept packets
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if (sockfd == -1) {
+        error("Socket creation error");
+    }
+
+    char packet[PACKET_SIZE];
+    ssize_t packet_size;
+    struct timeval start_time, current_time;
+
+    gettimeofday(&start_time, NULL);
+    
+    while (1) {
+        gettimeofday(&current_time, NULL);
+        if (current_time.tv_sec - start_time.tv_sec >= loop_duration) {
+            break;
+        }
+
+        packet_size = recv(sockfd, packet, PACKET_SIZE, 0);
+        if (packet_size == -1) {
+            error("Packet reception error");
+        }
+
+        struct ip *ip_header = (struct ip *)packet;
+
+        if (strcmp(inet_ntoa(ip_header->ip_src), src_ip) == 0) {
+            if (strcmp(protocol, "TCP") == 0) {
+                struct tcphdr *tcp_header = (struct tcphdr *)(packet + (ip_header->ip_hl << 2));
+                if (ntohs(tcp_header->th_sport) == src_port) {
+                    ip_header->ip_dst.s_addr = inet_addr(dest_ip);
+                    tcp_header->th_dport = htons(dest_port);
+                    ip_header->ip_sum = 0;
+                    ip_header->ip_sum = htons(~(ip_header->ip_sum));
+                    tcp_header->th_sum = 0;
+                    tcp_header->th_sum = htons(~(tcp_header->th_sum));
+
+                    struct sockaddr_in dest_addr;
+                    memset(&dest_addr, 0, sizeof(dest_addr));
+                    dest_addr.sin_family = AF_INET;
+                    dest_addr.sin_addr.s_addr = ip_header->ip_dst.s_addr;
+                    dest_addr.sin_port = tcp_header->th_dport;
+
+                    if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+                        error("Packet sendto error");
+                    }
+
+                    printf("Redirected TCP packet from %s:%d to %s:%d\n", src_ip, src_port, dest_ip, dest_port);
+                }
+            } else if (strcmp(protocol, "UDP") == 0) {
+                struct udphdr *udp_header = (struct udphdr *)(packet + (ip_header->ip_hl << 2));
+                if (ntohs(udp_header->uh_sport) == src_port) {
+                    ip_header->ip_dst.s_addr = inet_addr(dest_ip);
+                    udp_header->uh_dport = htons(dest_port);
+                    ip_header->ip_sum = 0;
+                    ip_header->ip_sum = htons(~(ip_header->ip_sum));
+                    udp_header->uh_sum = 0;
+                    udp_header->uh_sum = htons(~(udp_header->uh_sum));
+
+                    struct sockaddr_in dest_addr;
+                    memset(&dest_addr, 0, sizeof(dest_addr));
+                    dest_addr.sin_family = AF_INET;
+                    dest_addr.sin_addr.s_addr = ip_header->ip_dst.s_addr;
+                    dest_addr.sin_port = udp_header->uh_dport;
+
+                    if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+                        error("Packet sendto error");
+                    }
+
+                    printf("Redirected UDP packet from %s:%d to %s:%d\n", src_ip, src_port, dest_ip, dest_port);
+                }
+            }
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+// USsage: ./packet_redirect 127.0.0.1 8080 192.168.1.10 12345 192.168.1.20 80 TCP 60
+
+
+
+//////////////////////////
+
+import sys
+import socket
+import threading
+
+def redirect_packet(listen_ip, listen_port, src_ip, src_port, dest_ip, dest_port):
+    try:
+        # Create a socket to listen for incoming packets
+        listen_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+        listen_socket.bind((listen_ip, listen_port))
+        listen_socket.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+        
+        print(f"Listening for incoming packets on {listen_ip}:{listen_port}")
+        
+        while True:
+            packet, addr = listen_socket.recvfrom(65535)
+            
+            # Check if the packet's source IP and source port match the provided values
+            if addr[0] == src_ip and packet[0] == src_port:
+                # Modify the destination IP and port
+                modified_packet = packet.replace(src_ip, dest_ip).replace(src_port, dest_port)
+                
+                # Create a new socket and send the modified packet to the destination
+                send_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+                send_socket.sendto(modified_packet, (dest_ip, dest_port))
+                send_socket.close()
+                
+                print(f"Redirected packet from {src_ip}:{src_port} to {dest_ip}:{dest_port}")
+    
+    except KeyboardInterrupt:
+        print("Packet redirection terminated.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    if len(sys.argv) != 7:
+        print("Usage: python packet_redirect.py <listen_ip> <listen_port> <src_ip> <src_port> <dest_ip> <dest_port>")
+        sys.exit(1)
+
+    listen_ip = sys.argv[1]
+    listen_port = int(sys.argv[2])
+    src_ip = sys.argv[3]
+    src_port = int(sys.argv[4])
+    dest_ip = sys.argv[5]
+    dest_port = int(sys.argv[6])
+
+    redirect_packet(listen_ip, listen_port, src_ip, src_port, dest_ip, dest_port)
+
+
+
+
+////////
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/time.h>
+
+#define PACKET_SIZE 4096
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+int main(int argc, char *argv[]) {
+    // Check for the correct number of command-line arguments
+    if (argc != 9) {
+        fprintf(stderr, "Usage: %s <listen_ip> <listen_port> <src_ip> <src_port> <dest_ip> <dest_port> <protocol (TCP/UDP)> <loop_duration>\n", argv[0]);
+        exit(1);
+    }
+
+    const char *listen_ip = argv[1];
+    int listen_port = atoi(argv[2]);
+    const char *src_ip = argv[3];
+    int src_port = atoi(argv[4]);
+    const char *dest_ip = argv[5];
+    int dest_port = atoi(argv[6]);
+    const char *protocol = argv[7];
+    int loop_duration = atoi(argv[8]);
+
+    // Create a raw socket to intercept packets
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if (sockfd == -1) {
+        error("Socket creation error");
+    }
+
+    char packet[PACKET_SIZE];
+    ssize_t packet_size;
+    struct timeval start_time, current_time;
+
+    // Get the current time for the loop duration calculation
+    gettimeofday(&start_time, NULL);
+    
+    // Main packet interception and redirection loop
+    while (1) {
+        // Get the current time
+        gettimeofday(&current_time, NULL);
+
+        // Check if the loop duration has elapsed
+        if (current_time.tv_sec - start_time.tv_sec >= loop_duration) {
+            break;
+        }
+
+        // Receive a packet
+        packet_size = recv(sockfd, packet, PACKET_SIZE, 0);
+        if (packet_size == -1) {
+            error("Packet reception error");
+        }
+
+        struct ip *ip_header = (struct ip *)packet;
+
+        // Check if the packet's source IP matches the provided source IP
+        if (strcmp(inet_ntoa(ip_header->ip_src), src_ip) == 0) {
+            // Handle TCP protocol
+            if (strcmp(protocol, "TCP") == 0) {
+                struct tcphdr *tcp_header = (struct tcphdr *)(packet + (ip_header->ip_hl << 2));
+                
+                // Check if the packet's source port matches the provided source port
+                if (ntohs(tcp_header->th_sport) == src_port) {
+                    // Modify destination IP and port
+                    ip_header->ip_dst.s_addr = inet_addr(dest_ip);
+                    tcp_header->th_dport = htons(dest_port);
+                    
+                    // Recalculate IP checksum
+                    ip_header->ip_sum = 0;
+                    ip_header->ip_sum = htons(~(ip_header->ip_sum));
+                    
+                    // Recalculate TCP checksum
+                    tcp_header->th_sum = 0;
+                    tcp_header->th_sum = htons(~(tcp_header->th_sum));
+
+                    struct sockaddr_in dest_addr;
+                    memset(&dest_addr, 0, sizeof(dest_addr));
+                    dest_addr.sin_family = AF_INET;
+                    dest_addr.sin_addr.s_addr = ip_header->ip_dst.s_addr;
+                    dest_addr.sin_port = tcp_header->th_dport;
+
+                    // Send the modified packet to the new destination
+                    if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+                        error("Packet sendto error");
+                    }
+
+                    printf("Redirected TCP packet from %s:%d to %s:%d\n", src_ip, src_port, dest_ip, dest_port);
+                }
+            }
+            // Handle UDP protocol
+            else if (strcmp(protocol, "UDP") == 0) {
+                struct udphdr *udp_header = (struct udphdr *)(packet + (ip_header->ip_hl << 2));
+                
+                // Check if the packet's source port matches the provided source port
+                if (ntohs(udp_header->uh_sport) == src_port) {
+                    // Modify destination IP and port
+                    ip_header->ip_dst.s_addr = inet_addr(dest_ip);
+                    udp_header->uh_dport = htons(dest_port);
+                    
+                    // Recalculate IP checksum
+                    ip_header->ip_sum = 0;
+                    ip_header->ip_sum = htons(~(ip_header->ip_sum));
+                    
+                    // Recalculate UDP checksum
+                    udp_header->uh_sum = 0;
+                    udp_header->uh_sum = htons(~(udp_header->uh_sum));
+
+                    struct sockaddr_in dest_addr;
+                    memset(&dest_addr, 0, sizeof(dest_addr));
+                    dest_addr.sin_family = AF_INET;
+                    dest_addr.sin_addr.s_addr = ip_header->ip_dst.s_addr;
+                    dest_addr.sin_port = udp_header->uh_dport;
+
+                    // Send the modified packet to the new destination
+                    if (sendto(sockfd, packet, packet_size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+                        error("Packet sendto error");
+                    }
+
+                    printf("Redirected UDP packet from %s:%d to %s:%d\n", src_ip, src_port, dest_ip, dest_port);
+                }
+            }
+        }
+    }
+
+    // Close the socket
+    close(sockfd);
+    return 0;
+}
+
