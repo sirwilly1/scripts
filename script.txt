@@ -906,3 +906,348 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+//////////
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+// Function to create a socket and bind it for listening
+int createAndBindSocket(const char* listenIP, int listenPort, int protocol) {
+    int socketFd;
+
+    // Create a socket based on the specified protocol (TCP or UDP)
+    if (protocol == IPPROTO_TCP) {
+        socketFd = socket(AF_INET, SOCK_STREAM, 0); // TCP socket
+    } else if (protocol == IPPROTO_UDP) {
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    } else {
+        perror("Invalid protocol");
+        exit(1);
+    }
+
+    if (socketFd == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(listenIP);
+    addr.sin_port = htons(listenPort);
+
+    // Bind the socket to the specified address
+    if (bind(socketFd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Bind error");
+        close(socketFd);
+        exit(1);
+    }
+
+    return socketFd;
+}
+
+// Function to handle packet redirection
+void redirectPackets(int listenSocket, const char* destIP, int destPort, int protocol, int duration) {
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection started. Duration: %d seconds\n", duration);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Create a buffer for packet data
+    char buffer[1024];
+    memset(buffer, 0, sizeof(buffer));
+
+    // Simulate sending packets
+    int packetCount = 0;
+
+    while (1) {
+        ssize_t bytesSent = sendto(listenSocket, buffer, sizeof(buffer), 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
+
+        if (bytesSent == -1) {
+            perror("Send error");
+            close(listenSocket);
+            exit(1);
+        }
+
+        packetCount++;
+
+        printf("Sent packet %d\n", packetCount);
+
+        if (duration <= 0) {
+            printf("Redirection completed.\n");
+            break; // If duration is 0, exit the loop immediately
+        }
+    }
+
+    // Clean up and close the socket
+    close(listenSocket);
+}
+
+int main() {
+    char listenIP[16];
+    int listenPort, srcPort, destPort, protocol, duration;
+
+    // Prompt the user for Listen_IP
+    printf("Enter Listen_IP: ");
+    scanf("%s", listenIP);
+
+    // Prompt the user for Listen_PORT
+    printf("Enter Listen_PORT: ");
+    scanf("%d", &listenPort);
+
+    // Prompt the user for Src_IP (not used in this example)
+    printf("Enter Src_IP (unused): ");
+    scanf("%*s");
+
+    // Prompt the user for Src_PORT (not used in this example)
+    printf("Enter Src_PORT (unused): ");
+    scanf("%d", &srcPort);
+
+    // Prompt the user for Dest_IP
+    char destIP[16];
+    printf("Enter Dest_IP: ");
+    scanf("%s", destIP);
+
+    // Prompt the user for Dest_PORT
+    printf("Enter Dest_PORT: ");
+    scanf("%d", &destPort);
+
+    // Prompt the user for Protocol (1 for TCP, 2 for UDP)
+    printf("Enter Protocol (1 for TCP, 2 for UDP): ");
+    scanf("%d", &protocol);
+
+    // Prompt the user for Duration in seconds
+    printf("Enter Duration (seconds): ");
+    scanf("%d", &duration);
+
+    int listenSocket = createAndBindSocket(listenIP, listenPort, protocol);
+
+    redirectPackets(listenSocket, destIP, destPort, protocol, duration);
+
+    return 0;
+}
+
+
+
+
+
+
+
+//////////////////////
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+
+// Function to create a socket and bind it for listening
+int createAndBindSocket(const char* listenIP, int listenPort, int protocol) {
+    int socketFd;
+
+    // Create a socket based on the specified protocol (TCP or UDP)
+    if (protocol == IPPROTO_TCP) {
+        socketFd = socket(AF_INET, SOCK_STREAM, 0); // TCP socket
+    } else if (protocol == IPPROTO_UDP) {
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    } else {
+        perror("Invalid protocol");
+        exit(1);
+    }
+
+    if (socketFd == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(listenIP);
+    addr.sin_port = htons(listenPort);
+
+    // Bind the socket to the specified address
+    if (bind(socketFd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Bind error");
+        close(socketFd);
+        exit(1);
+    }
+
+    return socketFd;
+}
+
+// Function to handle TCP packet redirection
+void redirectTCPPackets(const char* listenIP, int listenPort, const char* srcIP, int srcPort, const char* destIP, int destPort, int duration) {
+    int listenSocket = createAndBindSocket(listenIP, listenPort, IPPROTO_TCP);
+
+    printf("TCP server is listening on %s:%d\n", listenIP, listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", destIP, destPort, duration);
+
+    // Accept incoming connections
+    if (listen(listenSocket, 5) == -1) {
+        perror("Listen error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    int destSocket = socket(AF_INET, SOCK_STREAM, 0); // Create a socket for connecting to the destination server
+
+    if (connect(destSocket, (struct sockaddr*)&destAddr, sizeof(destAddr)) == -1) {
+        perror("Destination server connection error");
+        close(listenSocket);
+        close(destSocket);
+        exit(1);
+    }
+
+    printf("Connected to destination server %s:%d\n", destIP, destPort);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recv(listenSocket, buffer, sizeof(buffer), 0);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = send(destSocket, buffer, bytesRead, 0);
+
+        if (bytesSent == -1) {
+            perror("Send error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+}
+
+// Function to handle UDP packet redirection
+void redirectUDPPackets(const char* listenIP, int listenPort, const char* destIP, int destPort, int duration) {
+    int listenSocket = createAndBindSocket(listenIP, listenPort, IPPROTO_UDP);
+
+    printf("UDP server is listening on %s:%d\n", listenIP, listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", destIP, destPort, duration);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        struct sockaddr_in srcAddr;
+        socklen_t srcAddrLen = sizeof(srcAddr);
+
+        ssize_t bytesRead = recvfrom(listenSocket, buffer, sizeof(buffer), 0, (struct sockaddr*)&srcAddr, &srcAddrLen);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = sendto(listenSocket, buffer, bytesRead, 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
+
+        if (bytesSent == -1) {
+            perror("Sendto error");
+            close(listenSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the socket
+    close(listenSocket);
+}
+
+int main() {
+    char listenIP[16], srcIP[16], destIP[16];
+    int listenPort, srcPort, destPort, protocol, duration;
+
+    // Prompt the user for Listen_IP
+    printf("Enter Listen_IP: ");
+    scanf("%s", listenIP);
+
+    // Prompt the user for Listen_PORT
+    printf("Enter Listen_PORT: ");
+    scanf("%d", &listenPort);
+
+    // Prompt the user for Src_IP
+    printf("Enter Src_IP: ");
+    scanf("%s", srcIP);
+
+    // Prompt the user for Src_PORT
+    printf("Enter Src_PORT: ");
+    scanf("%d", &srcPort);
+
+    // Prompt the user for Dest_IP
+    printf("Enter Dest_IP: ");
+    scanf("%s", destIP);
+
+    // Prompt the user for Dest_PORT
+    printf("Enter Dest_PORT: ");
+    scanf("%d", &destPort);
+
+    // Prompt the user for Protocol (1 for TCP, 2 for UDP)
+    printf("Enter Protocol (1 for TCP, 2 for UDP): ");
+    scanf("%d", &protocol);
+
+    // Prompt the user for Duration in seconds
+    printf("Enter Duration (seconds): ");
+    scanf("%d", &duration);
+
+    if (protocol == 1) {
+        // TCP Protocol
+        redirectTCPPackets(listenIP, listenPort, srcIP, srcPort, destIP, destPort, duration);
+    } else if (protocol == 2) {
+        // UDP Protocol
+        redirectUDPPackets(listenIP, listenPort, destIP, destPort, duration);
+    } else {
+        printf("Invalid protocol choice.\n");
+        exit(1);
+    }
+
+    return 0;
+}
