@@ -1251,3 +1251,114 @@ int main() {
 
     return 0;
 }
+//////////////////
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+// Function to handle TCP redirection
+void redirect_tcp(const char *listen_ip, int listen_port, const char *src_ip, int src_port, const char *dest_ip, int dest_port) {
+    // Create a socket for listening
+    int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_sock == -1) {
+        perror("Socket creation failed");
+        exit(1);
+    }
+
+    struct sockaddr_in listen_addr, src_addr, dest_addr;
+    memset(&listen_addr, 0, sizeof(listen_addr));
+    memset(&src_addr, 0, sizeof(src_addr));
+    memset(&dest_addr, 0, sizeof(dest_addr));
+
+    // Set up the listening address
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = inet_addr(listen_ip);
+    listen_addr.sin_port = htons(listen_port);
+
+    // Bind the socket to the listening address
+    if (bind(listen_sock, (struct sockaddr *)&listen_addr, sizeof(listen_addr)) == -1) {
+        perror("Bind failed");
+        close(listen_sock);
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(listen_sock, 1) == -1) {
+        perror("Listen failed");
+        close(listen_sock);
+        exit(1);
+    }
+
+    printf("Listening on %s:%d for TCP packets...\n", listen_ip, listen_port);
+
+    // Accept an incoming connection
+    int src_sock = accept(listen_sock, (struct sockaddr *)&src_addr, NULL);
+    if (src_sock == -1) {
+        perror("Accept failed");
+        close(listen_sock);
+        exit(1);
+    }
+
+    printf("Accepted connection from %s:%d\n", inet_ntoa(src_addr.sin_addr), ntohs(src_addr.sin_port));
+
+    // Create a socket for forwarding packets
+    int dest_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (dest_sock == -1) {
+        perror("Socket creation failed");
+        close(listen_sock);
+        close(src_sock);
+        exit(1);
+    }
+
+    // Set up the destination address
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr.sin_port = htons(dest_port);
+
+    // Connect to the destination
+    if (connect(dest_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == -1) {
+        perror("Connect failed");
+        close(listen_sock);
+        close(src_sock);
+        close(dest_sock);
+        exit(1);
+    }
+
+    printf("Connected to destination %s:%d\n", dest_ip, dest_port);
+
+    // Data forwarding loop
+    char buffer[1024];
+    int bytes_read;
+
+    while ((bytes_read = recv(src_sock, buffer, sizeof(buffer), 0)) > 0) {
+        send(dest_sock, buffer, bytes_read, 0);
+    }
+
+    // Close sockets
+    close(listen_sock);
+    close(src_sock);
+    close(dest_sock);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 6) {
+        printf("Usage: %s Listen_IP Listen_PORT Src_IP Src_PORT Dest_IP Dest_PORT\n", argv[0]);
+        exit(1);
+    }
+
+    const char *listen_ip = argv[1];
+    int listen_port = atoi(argv[2]);
+    const char *src_ip = argv[3];
+    int src_port = atoi(argv[4]);
+    const char *dest_ip = argv[5];
+    int dest_port = atoi(argv[6]);
+
+    // Redirect TCP packets
+    redirect_tcp(listen_ip, listen_port, src_ip, src_port, dest_ip, dest_port);
+
+    return 0;
+}
