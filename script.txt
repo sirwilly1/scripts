@@ -1580,3 +1580,780 @@ int main() {
 
     return 0;
 }
+
+
+
+////////// test server
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
+int main() {
+    char listenIP[16];
+    int listenPort;
+
+    // Prompt the user for the server's Listen_IP
+    printf("Enter Listen_IP: ");
+    scanf("%s", listenIP);
+
+    // Prompt the user for the server's Listen_PORT
+    printf("Enter Listen_PORT: ");
+    scanf("%d", &listenPort);
+
+    int serverSocket, clientSocket;
+    struct sockaddr_in serverAddr, clientAddr;
+    socklen_t clientAddrLen = sizeof(clientAddr);
+
+    // Create a socket for the server
+    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (serverSocket == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    // Bind the server socket to the specified address and port
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = inet_addr(listenIP);
+    serverAddr.sin_port = htons(listenPort);
+
+    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
+        perror("Bind error");
+        close(serverSocket);
+        exit(1);
+    }
+
+    // Listen for incoming connections
+    if (listen(serverSocket, 5) == -1) {
+        perror("Listen error");
+        close(serverSocket);
+        exit(1);
+    }
+
+    printf("TCP server is listening on %s:%d\n", listenIP, listenPort);
+
+    // Accept incoming connections and echo data back to clients
+    while (1) {
+        clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
+
+        if (clientSocket == -1) {
+            perror("Accept error");
+            continue; // Continue listening for other connections
+        }
+
+        char buffer[1024];
+        ssize_t bytesRead;
+
+        while ((bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+            ssize_t bytesSent = send(clientSocket, buffer, bytesRead, 0);
+
+            if (bytesSent == -1) {
+                perror("Send error");
+                close(clientSocket);
+                break;
+            }
+        }
+
+        close(clientSocket);
+    }
+
+    // Close the server socket (unreachable in this simple example)
+    close(serverSocket);
+
+    return 0;
+}
+
+
+
+///////multi threading 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <pthread.h>
+
+// Function to create a socket and bind it for listening
+int createAndBindSocket(const char* listenIP, int listenPort, int protocol) {
+    int socketFd;
+
+    // Create a socket based on the specified protocol (TCP or UDP)
+    if (protocol == IPPROTO_TCP) {
+        socketFd = socket(AF_INET, SOCK_STREAM, 0); // TCP socket
+    } else if (protocol == IPPROTO_UDP) {
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    } else {
+        perror("Invalid protocol");
+        exit(1);
+    }
+
+    if (socketFd == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(listenIP);
+    addr.sin_port = htons(listenPort);
+
+    // Bind the socket to the specified address
+    if (bind(socketFd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Bind error");
+        close(socketFd);
+        exit(1);
+    }
+
+    return socketFd;
+}
+
+// Function to handle TCP packet redirection
+void* redirectTCPPackets(void* args) {
+    // Extract arguments
+    struct {
+        const char* listenIP;
+        int listenPort;
+        const char* srcIP;
+        int srcPort;
+        const char* destIP;
+        int destPort;
+        int duration;
+    } * threadArgs = args;
+
+    const char* listenIP = threadArgs->listenIP;
+    int listenPort = threadArgs->listenPort;
+    const char* destIP = threadArgs->destIP;
+    int destPort = threadArgs->destPort;
+    int duration = threadArgs->duration;
+
+    int listenSocket = createAndBindSocket(listenIP, listenPort, IPPROTO_TCP);
+
+    printf("TCP server is listening on %s:%d\n", listenIP, listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", destIP, destPort, duration);
+
+    // Accept incoming connections
+    if (listen(listenSocket, 5) == -1) {
+        perror("Listen error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    int destSocket = socket(AF_INET, SOCK_STREAM, 0); // Create a socket for connecting to the destination server
+
+    if (connect(destSocket, (struct sockaddr*)&destAddr, sizeof(destAddr)) == -1) {
+        perror("Destination server connection error");
+        close(listenSocket);
+        close(destSocket);
+        exit(1);
+    }
+
+    printf("Connected to destination server %s:%d\n", destIP, destPort);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recv(listenSocket, buffer, sizeof(buffer), 0);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = send(destSocket, buffer, bytesRead, 0);
+
+        if (bytesSent == -1) {
+            perror("Send error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+
+    // Free the arguments
+    free(threadArgs);
+
+    return NULL;
+}
+
+int main() {
+    int numRedirects;
+
+    // Prompt the user for the number of redirects
+    printf("Enter the number of redirects: ");
+    scanf("%d", &numRedirects);
+
+    pthread_t threads[numRedirects];
+
+    for (int i = 0; i < numRedirects; i++) {
+        struct {
+            const char* listenIP;
+            int listenPort;
+            const char* srcIP;
+            int srcPort;
+            const char* destIP;
+            int destPort;
+            int duration;
+        } * threadArgs = malloc(sizeof(*threadArgs));
+
+        if (threadArgs == NULL) {
+            perror("Thread argument allocation error");
+            exit(1);
+        }
+
+        // Prompt the user for redirection parameters
+        printf("Enter Listen_IP: ");
+        scanf("%s", threadArgs->listenIP);
+        printf("Enter Listen_PORT: ");
+        scanf("%d", &(threadArgs->listenPort));
+        printf("Enter Src_IP: ");
+        scanf("%s", threadArgs->srcIP);
+        printf("Enter Src_PORT: ");
+        scanf("%d", &(threadArgs->srcPort));
+        printf("Enter Dest_IP: ");
+        scanf("%s", threadArgs->destIP);
+        printf("Enter Dest_PORT: ");
+        scanf("%d", &(threadArgs->destPort));
+        printf("Enter Duration (seconds): ");
+        scanf("%d", &(threadArgs->duration));
+
+        // Create a new thread for packet redirection
+        if (pthread_create(&threads[i], NULL, redirectTCPPackets, threadArgs) != 0) {
+            perror("Thread creation error");
+            free(threadArgs);
+            exit(1);
+        }
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < numRedirects; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
+}
+
+
+
+
+
+//////////////mulitithreading 2
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <pthread.h>
+
+// Function to create a socket and bind it for listening
+int createAndBindSocket(const char* listenIP, int listenPort, int protocol) {
+    int socketFd;
+
+    // Create a socket based on the specified protocol (TCP or UDP)
+    if (protocol == IPPROTO_TCP) {
+        socketFd = socket(AF_INET, SOCK_STREAM, 0); // TCP socket
+    } else if (protocol == IPPROTO_UDP) {
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    } else {
+        perror("Invalid protocol");
+        exit(1);
+    }
+
+    if (socketFd == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(listenIP);
+    addr.sin_port = htons(listenPort);
+
+    // Bind the socket to the specified address
+    if (bind(socketFd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Bind error");
+        close(socketFd);
+        exit(1);
+    }
+
+    return socketFd;
+}
+
+// Function to handle TCP packet redirection
+void redirectTCPPackets(const char* listenIP, int listenPort, const char* destIP, int destPort, int duration) {
+    int listenSocket = createAndBindSocket(listenIP, listenPort, IPPROTO_TCP);
+
+    printf("TCP server is listening on %s:%d\n", listenIP, listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", destIP, destPort, duration);
+
+    // Accept incoming connections
+    if (listen(listenSocket, 5) == -1) {
+        perror("Listen error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    int destSocket = socket(AF_INET, SOCK_STREAM, 0); // Create a socket for connecting to the destination server
+
+    if (connect(destSocket, (struct sockaddr*)&destAddr, sizeof(destAddr)) == -1) {
+        perror("Destination server connection error");
+        close(listenSocket);
+        close(destSocket);
+        exit(1);
+    }
+
+    printf("Connected to destination server %s:%d\n", destIP, destPort);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recv(listenSocket, buffer, sizeof(buffer), 0);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = send(destSocket, buffer, bytesRead, 0);
+
+        if (bytesSent == -1) {
+            perror("Send error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+}
+
+// Function to handle UDP packet redirection
+void redirectUDPPackets(const char* listenIP, int listenPort, const char* destIP, int destPort, int duration) {
+    int listenSocket = createAndBindSocket(listenIP, listenPort, IPPROTO_UDP);
+
+    printf("UDP server is listening on %s:%d\n", listenIP, listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(destIP);
+    destAddr.sin_port = htons(destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", destIP, destPort, duration);
+
+    // Create a socket for sending packets to the destination server
+    int destSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    
+    if (destSocket == -1) {
+        perror("Destination socket creation error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recvfrom(listenSocket, buffer, sizeof(buffer), 0, NULL, NULL);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = sendto(destSocket, buffer, bytesRead, 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
+
+        if (bytesSent == -1) {
+            perror("Sendto error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+}
+
+int main() {
+    int numRedirects;
+
+    // Prompt the user for the number of redirects
+    printf("Enter the number of redirects: ");
+    scanf("%d", &numRedirects);
+
+    pthread_t threads[numRedirects];
+
+    for (int i = 0; i < numRedirects; i++) {
+        struct {
+            const char* listenIP;
+            int listenPort;
+            const char* destIP;
+            int destPort;
+            int protocol;
+            int duration;
+        } * threadArgs = malloc(sizeof(*threadArgs));
+
+        if (threadArgs == NULL) {
+            perror("Thread argument allocation error");
+            exit(1);
+        }
+
+        // Prompt the user for redirection parameters
+        printf("Enter Listen_IP: ");
+        scanf("%s", threadArgs->listenIP);
+        printf("Enter Listen_PORT: ");
+        scanf("%d", &(threadArgs->listenPort));
+        printf("Enter Dest_IP: ");
+        scanf("%s", threadArgs->destIP);
+        printf("Enter Dest_PORT: ");
+        scanf("%d", &(threadArgs->destPort));
+
+        // Prompt the user for Protocol (1 for TCP, 2 for UDP)
+        printf("Enter Protocol (1 for TCP, 2 for UDP): ");
+        scanf("%d", &(threadArgs->protocol));
+
+        // Prompt the user for Duration in seconds
+        printf("Enter Duration (seconds): ");
+        scanf("%d", &(threadArgs->duration));
+
+        // Create a new thread for packet redirection based on the selected protocol
+        if (threadArgs->protocol == IPPROTO_TCP) {
+            if (pthread_create(&threads[i], NULL, (void* (*)(void*))redirectTCPPackets, threadArgs) != 0) {
+                perror("Thread creation error");
+                free(threadArgs);
+                exit(1);
+            }
+        } else if (threadArgs->protocol == IPPROTO_UDP) {
+            if (pthread_create(&threads[i], NULL, (void* (*)(void*))redirectUDPPackets, threadArgs) != 0) {
+                perror("Thread creation error");
+                free(threadArgs);
+                exit(1);
+            }
+        } else {
+            printf("Invalid protocol choice.\n");
+            free(threadArgs);
+        }
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < numRedirects; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
+}
+
+
+
+///////////
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <pthread.h>
+
+// Function to create a socket and bind it for listening
+int createAndBindSocket(const char* listenIP, int listenPort, int protocol) {
+    int socketFd;
+
+    // Create a socket based on the specified protocol (TCP or UDP)
+    if (protocol == IPPROTO_TCP) {
+        socketFd = socket(AF_INET, SOCK_STREAM, 0); // TCP socket
+    } else if (protocol == IPPROTO_UDP) {
+        socketFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP socket
+    } else {
+        perror("Invalid protocol");
+        exit(1);
+    }
+
+    if (socketFd == -1) {
+        perror("Socket creation error");
+        exit(1);
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(listenIP);
+    addr.sin_port = htons(listenPort);
+
+    // Bind the socket to the specified address
+    if (bind(socketFd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("Bind error");
+        close(socketFd);
+        exit(1);
+    }
+
+    return socketFd;
+}
+
+// Function to handle TCP packet redirection
+void* redirectTCPPackets(void* args) {
+    // Extract arguments
+    struct {
+        const char* listenIP;
+        int listenPort;
+        const char* destIP;
+        int destPort;
+        int duration;
+    } * threadArgs = args;
+
+    int listenSocket = createAndBindSocket(threadArgs->listenIP, threadArgs->listenPort, IPPROTO_TCP);
+
+    printf("TCP server is listening on %s:%d\n", threadArgs->listenIP, threadArgs->listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(threadArgs->destIP);
+    destAddr.sin_port = htons(threadArgs->destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", threadArgs->destIP, threadArgs->destPort, threadArgs->duration);
+
+    // Accept incoming connections
+    if (listen(listenSocket, 5) == -1) {
+        perror("Listen error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    int destSocket = socket(AF_INET, SOCK_STREAM, 0); // Create a socket for connecting to the destination server
+
+    if (connect(destSocket, (struct sockaddr*)&destAddr, sizeof(destAddr)) == -1) {
+        perror("Destination server connection error");
+        close(listenSocket);
+        close(destSocket);
+        exit(1);
+    }
+
+    printf("Connected to destination server %s:%d\n", threadArgs->destIP, threadArgs->destPort);
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = threadArgs->duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recv(listenSocket, buffer, sizeof(buffer), 0);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = send(destSocket, buffer, bytesRead, 0);
+
+        if (bytesSent == -1) {
+            perror("Send error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+
+    // Free the arguments
+    free(threadArgs);
+
+    return NULL;
+}
+
+// Function to handle UDP packet redirection
+void* redirectUDPPackets(void* args) {
+    // Extract arguments
+    struct {
+        const char* listenIP;
+        int listenPort;
+        const char* destIP;
+        int destPort;
+        int duration;
+    } * threadArgs = args;
+
+    int listenSocket = createAndBindSocket(threadArgs->listenIP, threadArgs->listenPort, IPPROTO_UDP);
+
+    printf("UDP server is listening on %s:%d\n", threadArgs->listenIP, threadArgs->listenPort);
+
+    struct sockaddr_in destAddr;
+    memset(&destAddr, 0, sizeof(destAddr));
+    destAddr.sin_family = AF_INET;
+    destAddr.sin_addr.s_addr = inet_addr(threadArgs->destIP);
+    destAddr.sin_port = htons(threadArgs->destPort);
+
+    printf("Packet redirection to %s:%d started. Duration: %d seconds\n", threadArgs->destIP, threadArgs->destPort, threadArgs->duration);
+
+    // Create a socket for sending packets to the destination server
+    int destSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    
+    if (destSocket == -1) {
+        perror("Destination socket creation error");
+        close(listenSocket);
+        exit(1);
+    }
+
+    // Set a timeout for the duration of redirection
+    struct timeval timeout;
+    timeout.tv_sec = threadArgs->duration;
+    timeout.tv_usec = 0;
+    setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    // Main packet redirection loop
+    while (1) {
+        char buffer[1024];
+        ssize_t bytesRead = recvfrom(listenSocket, buffer, sizeof(buffer), 0, NULL, NULL);
+
+        if (bytesRead <= 0) {
+            printf("Redirection completed.\n");
+            break;
+        }
+
+        ssize_t bytesSent = sendto(destSocket, buffer, bytesRead, 0, (struct sockaddr*)&destAddr, sizeof(destAddr));
+
+        if (bytesSent == -1) {
+            perror("Sendto error");
+            close(listenSocket);
+            close(destSocket);
+            exit(1);
+        }
+    }
+
+    // Clean up and close the sockets
+    close(listenSocket);
+    close(destSocket);
+
+    // Free the arguments
+    free(threadArgs);
+
+    return NULL;
+}
+
+int main() {
+    int numRedirects;
+
+    // Prompt the user for the number of redirects
+    printf("Enter the number of redirects: ");
+    scanf("%d", &numRedirects);
+
+    pthread_t threads[numRedirects];
+
+    for (int i = 0; i < numRedirects; i++) {
+        struct {
+            const char* listenIP;
+            int listenPort;
+            const char* destIP;
+            int destPort;
+            int protocol;
+            int duration;
+        } * threadArgs = malloc(sizeof(*threadArgs));
+
+        if (threadArgs == NULL) {
+            perror("Thread argument allocation error");
+            exit(1);
+        }
+
+        // Prompt the user for redirection parameters
+        printf("Enter Listen_IP: ");
+        scanf("%s", threadArgs->listenIP);
+        printf("Enter Listen_PORT: ");
+        scanf("%d", &(threadArgs->listenPort));
+        printf("Enter Dest_IP: ");
+        scanf("%s", threadArgs->destIP);
+        printf("Enter Dest_PORT: ");
+        scanf("%d", &(threadArgs->destPort));
+
+        // Prompt the user for Protocol (1 for TCP, 2 for UDP)
+        printf("Enter Protocol (1 for TCP, 2 for UDP): ");
+        scanf("%d", &(threadArgs->protocol));
+
+        // Prompt the user for Duration in seconds
+        printf("Enter Duration (seconds): ");
+        scanf("%d", &(threadArgs->duration));
+
+        // Create a new thread for each instance of packet redirection
+        if (threadArgs->protocol == IPPROTO_TCP) {
+            if (pthread_create(&threads[i], NULL, redirectTCPPackets, threadArgs) != 0) {
+                perror("Thread creation error");
+                free(threadArgs);
+                exit(1);
+            }
+        } else if (threadArgs->protocol == IPPROTO_UDP) {
+            if (pthread_create(&threads[i], NULL, redirectUDPPackets, threadArgs) != 0) {
+                perror("Thread creation error");
+                free(threadArgs);
+                exit(1);
+            }
+        } else {
+            printf("Invalid protocol choice.\n");
+            free(threadArgs);
+        }
+    }
+
+    // Wait for all threads to finish
+    for (int i = 0; i < numRedirects; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
+}
