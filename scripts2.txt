@@ -1,0 +1,536 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+struct PacketRedirectionConfig {
+    int source_port;
+    char destination_ip[20];
+    int destination_port;
+};
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+void redirect_udp_packets(const struct PacketRedirectionConfig *config) {
+    int sockfd;
+    struct sockaddr_in source_addr, destination_addr;
+
+    // Create a socket for capturing UDP packets
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&source_addr, 0, sizeof(source_addr));
+    source_addr.sin_family = AF_INET;
+    source_addr.sin_addr.s_addr = INADDR_ANY;
+    source_addr.sin_port = htons(config->source_port);
+
+    // Bind the socket to the specified source port
+    if (bind(sockfd, (struct sockaddr *)&source_addr, sizeof(source_addr)) < 0) {
+        error("Error binding socket");
+    }
+
+    memset(&destination_addr, 0, sizeof(destination_addr));
+    destination_addr.sin_family = AF_INET;
+    destination_addr.sin_port = htons(config->destination_port);
+
+    // Convert the destination IP address to binary form
+    if (inet_pton(AF_INET, config->destination_ip, &(destination_addr.sin_addr)) <= 0) {
+        error("Error converting destination IP address");
+    }
+
+    socklen_t dest_len = sizeof(destination_addr);
+    char buffer[MAX_BUFFER_SIZE];
+
+    printf("Packet redirection from source port %d to %s:%d is active...\n", config->source_port, config->destination_ip, config->destination_port);
+
+    while (1) {
+        int bytes_received = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *)&destination_addr, &dest_len);
+
+        if (bytes_received < 0) {
+            error("Error receiving packet");
+        }
+
+        // Perform any necessary modifications to the packet here
+
+        // Send the packet to the destination
+        int bytes_sent = sendto(sockfd, buffer, bytes_received, 0, (struct sockaddr *)&destination_addr, dest_len);
+
+        if (bytes_sent < 0) {
+            error("Error sending packet");
+        }
+    }
+
+    close(sockfd);
+}
+
+int main() {
+    struct PacketRedirectionConfig config;
+    
+    printf("Enter source port: ");
+    scanf("%d", &config.source_port);
+
+    printf("Enter destination IP: ");
+    scanf("%s", config.destination_ip);
+
+    printf("Enter destination port: ");
+    scanf("%d", &config.destination_port);
+
+    // Call the packet redirection function with the provided configuration
+    redirect_udp_packets(&config);
+
+    return 0;
+}
+
+
+////////////////////// test recv server 
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+        exit(1);
+    }
+
+    int port = atoi(argv[1);
+
+    int sockfd;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    char buffer[MAX_BUFFER_SIZE];
+
+    // Create a socket for the test server
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(port);
+
+    // Bind the socket to the specified port
+    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        error("Error binding socket");
+    }
+
+    printf("UDP test server is listening on port %d...\n", port);
+
+    while (1) {
+        int bytes_received = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *)&client_addr, &client_len);
+
+        if (bytes_received < 0) {
+            error("Error receiving packet");
+        }
+
+        printf("Received a packet from %s:%d:\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+        printf("Packet content:\n");
+        fwrite(buffer, 1, bytes_received, stdout);
+        printf("\n");
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+///////////////////// test send server 
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <destination_ip> <destination_port> <message>\n", argv[0]);
+        exit(1);
+    }
+
+    char *destination_ip = argv[1];
+    int destination_port = atoi(argv[2);
+    char *message = argv[3];
+
+    int sockfd;
+    struct sockaddr_in destination_addr;
+    char buffer[MAX_BUFFER_SIZE];
+
+    // Create a socket for the test server
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&destination_addr, 0, sizeof(destination_addr);
+    destination_addr.sin_family = AF_INET;
+    destination_addr.sin_port = htons(destination_port);
+
+    // Convert the destination IP address to binary form
+    if (inet_pton(AF_INET, destination_ip, &(destination_addr.sin_addr)) <= 0) {
+        error("Error converting destination IP address");
+    }
+
+    printf("Sending UDP packet to %s:%d:\n", destination_ip, destination_port);
+    printf("Packet content: %s\n", message);
+
+    // Send the packet to the destination
+    ssize_t bytes_sent = sendto(sockfd, message, strlen(message), 0, (struct sockaddr *)&destination_addr, sizeof(destination_addr));
+
+    if (bytes_sent < 0) {
+        error("Error sending packet");
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+
+
+//usage
+
+ ./test_server <destination_ip> <destination_port> "Hello, Redirection Server!"
+
+
+ ////////////////////
+
+
+
+ #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+struct PacketRedirectionConfig {
+    int source_port;
+    char source_ip[20];
+    char destination_ip[20];
+    int destination_port;
+};
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+void redirect_udp_packets(const struct PacketRedirectionConfig *config) {
+    int sockfd;
+    struct sockaddr_in source_addr, destination_addr;
+
+    // Create a socket for capturing UDP packets
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&source_addr, 0, sizeof(source_addr));
+    source_addr.sin_family = AF_INET;
+    source_addr.sin_addr.s_addr = inet_addr(config->source_ip);
+    source_addr.sin_port = htons(config->source_port);
+
+    // Bind the socket to the specified source IP and port
+    if (bind(sockfd, (struct sockaddr *)&source_addr, sizeof(source_addr)) < 0) {
+        error("Error binding socket");
+    }
+
+    memset(&destination_addr, 0, sizeof(destination_addr);
+    destination_addr.sin_family = AF_INET;
+    destination_addr.sin_port = htons(config->destination_port);
+
+    // Convert the destination IP address to binary form
+    if (inet_pton(AF_INET, config->destination_ip, &(destination_addr.sin_addr)) <= 0) {
+        error("Error converting destination IP address");
+    }
+
+    socklen_t dest_len = sizeof(destination_addr);
+    char buffer[MAX_BUFFER_SIZE];
+
+    printf("Packet redirection from %s:%d to %s:%d is active...\n", config->source_ip, config->source_port, config->destination_ip, config->destination_port);
+
+    while (1) {
+        int bytes_received = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *)&destination_addr, &dest_len);
+
+        if (bytes_received < 0) {
+            error("Error receiving packet");
+        }
+
+        // Perform any necessary modifications to the packet here
+
+        // Send the packet to the destination
+        int bytes_sent = sendto(sockfd, buffer, bytes_received, 0, (struct sockaddr *)&destination_addr, dest_len);
+
+        if (bytes_sent < 0) {
+            error("Error sending packet");
+        }
+    }
+
+    close(sockfd);
+}
+
+int main() {
+    struct PacketRedirectionConfig config;
+    
+    printf("Enter source IP: ");
+    scanf("%s", config.source_ip);
+
+    printf("Enter source port: ");
+    scanf("%d", &config.source_port);
+
+    printf("Enter destination IP: ");
+    scanf("%s", config.destination_ip);
+
+    printf("Enter destination port: ");
+    scanf("%d", &config.destination_port);
+
+    // Call the packet redirection function with the provided configuration
+    redirect_udp_packets(&config);
+
+    return 0;
+}
+
+
+////////////
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <time.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+struct PacketRedirectionConfig {
+    int source_port;
+    char source_ip[20];
+    char destination_ip[20];
+    int destination_port;
+    int duration;
+};
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+void redirect_udp_packets(const struct PacketRedirectionConfig *config) {
+    int sockfd;
+    struct sockaddr_in source_addr, destination_addr;
+
+    // Create a socket for capturing UDP packets
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&source_addr, 0, sizeof(source_addr));
+    source_addr.sin_family = AF_INET;
+    source_addr.sin_addr.s_addr = inet_addr(config->source_ip);
+    source_addr.sin_port = htons(config->source_port);
+
+    // Bind the socket to the specified source IP and port
+    if (bind(sockfd, (struct sockaddr *)&source_addr, sizeof(source_addr)) < 0) {
+        error("Error binding socket");
+    }
+
+    memset(&destination_addr, 0, sizeof(destination_addr));
+    destination_addr.sin_family = AF_INET;
+    destination_addr.sin_port = htons(config->destination_port);
+
+    // Convert the destination IP address to binary form
+    if (inet_pton(AF_INET, config->destination_ip, &(destination_addr.sin_addr)) <= 0) {
+        error("Error converting destination IP address");
+    }
+
+    socklen_t dest_len = sizeof(destination_addr);
+    char buffer[MAX_BUFFER_SIZE];
+
+    printf("Packet redirection from %s:%d to %s:%d is active for %d seconds...\n", config->source_ip, config->source_port, config->destination_ip, config->destination_port, config->duration);
+
+    time_t start_time = time(NULL);
+    while (time(NULL) - start_time < config->duration) {
+        int bytes_received = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *)&destination_addr, &dest_len);
+
+        if (bytes_received < 0) {
+            error("Error receiving packet");
+        }
+
+        // Perform any necessary modifications to the packet here
+
+        // Send the packet to the destination
+        int bytes_sent = sendto(sockfd, buffer, bytes_received, 0, (struct sockaddr *)&destination_addr, dest_len);
+
+        if (bytes_sent < 0) {
+            error("Error sending packet");
+        }
+    }
+
+    printf("Redirection timeout reached. Stopping redirection...\n");
+
+    close(sockfd);
+}
+
+int main() {
+    struct PacketRedirectionConfig config;
+    
+    printf("Enter source IP: ");
+    scanf("%s", config.source_ip);
+
+    printf("Enter source port: ");
+    scanf("%d", &config.source_port);
+
+    printf("Enter destination IP: ");
+    scanf("%s", config.destination_ip);
+
+    printf("Enter destination port: ");
+    scanf("%d", &config.destination_port);
+
+    printf("Enter duration (in seconds): ");
+    scanf("%d", &config.duration);
+
+    // Call the packet redirection function with the provided configuration
+    redirect_udp_packets(&config);
+
+    return 0;
+}
+
+
+
+
+
+//////
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define MAX_BUFFER_SIZE 65536
+
+struct PacketRedirectionConfig {
+    int source_port;
+    char destination_ip[20];
+    int destination_port;
+    int duration;
+};
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+void redirect_udp_packets(const struct PacketRedirectionConfig *config) {
+    int sockfd;
+    struct sockaddr_in source_addr, destination_addr;
+
+    // Create a socket for capturing UDP packets
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        error("Error opening socket");
+    }
+
+    memset(&source_addr, 0, sizeof(source_addr));
+    source_addr.sin_family = AF_INET;
+    source_addr.sin_addr.s_addr = INADDR_ANY;
+    source_addr.sin_port = htons(config->source_port);
+
+    // Bind the socket to the specified source port
+    if (bind(sockfd, (struct sockaddr *)&source_addr, sizeof(source_addr)) < 0) {
+        error("Error binding socket");
+    }
+
+    memset(&destination_addr, 0, sizeof(destination_addr));
+    destination_addr.sin_family = AF_INET;
+    destination_addr.sin_port = htons(config->destination_port);
+
+    // Convert the destination IP address to binary form
+    if (inet_pton(AF_INET, config->destination_ip, &(destination_addr.sin_addr)) <= 0) {
+        error("Error converting destination IP address");
+    }
+
+    socklen_t dest_len = sizeof(destination_addr);
+    char buffer[MAX_BUFFER_SIZE];
+
+    printf("Packet redirection from source port %d to %s:%d is active for %d seconds...\n", config->source_port, config->destination_ip, config->destination_port, config->duration);
+
+    time_t start_time = time(NULL);
+    while (time(NULL) - start_time < config->duration) {
+        int bytes_received = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *)&destination_addr, &dest_len);
+
+        if (bytes_received < 0) {
+            error("Error receiving packet");
+        }
+
+        // Perform any necessary modifications to the packet here
+
+        // Send the packet to the destination
+        int bytes_sent = sendto(sockfd, buffer, bytes_received, 0, (struct sockaddr *)&destination_addr, dest_len);
+
+        if (bytes_sent < 0) {
+            error("Error sending packet");
+        }
+    }
+
+    printf("Redirection timeout reached. Stopping redirection...\n");
+
+    close(sockfd);
+}
+
+int main() {
+    struct PacketRedirectionConfig config;
+    
+    printf("Enter source port: ");
+    scanf("%d", &config.source_port);
+
+    printf("Enter destination IP: ");
+    scanf("%s", config.destination_ip);
+
+    printf("Enter destination port: ");
+    scanf("%d", &config.destination_port);
+
+    printf("Enter duration (in seconds): ");
+    scanf("%d", &config.duration);
+
+    // Call the packet redirection function with the provided configuration
+    redirect_udp_packets(&config);
+
+    return 0;
+}
+
