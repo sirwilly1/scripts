@@ -1168,3 +1168,339 @@ In summary, the main difference between the two functions is their intended use:
 
 - `create_and_bind` is used for server-side applications to set up listening sockets.
 - `create_and_connect` is used for client-side applications to initiate connections to remote servers.
+
+
+/////
+
+The `forward` function is a crucial part of the `packet_redirection` program, responsible for forwarding data between two sockets. It plays a pivotal role in ensuring that data received on one socket is sent to another socket. Here's an explanation of how the `forward` function works:
+
+Function Signature:
+```c
+void forward(int from_sock, int to_sock);
+```
+
+Parameters:
+- `from_sock`: The socket descriptor from which data will be read.
+- `to_sock`: The socket descriptor to which data will be sent.
+
+Function Description:
+- The `forward` function takes two socket descriptors as parameters, `from_sock` and `to_sock`. These sockets represent two endpoints for communication.
+
+- Inside the function, it uses the `recv` function to read data from the `from_sock` socket and stores it in a buffer. The `recv` function is used for receiving data from a socket.
+
+  ```c
+  char buffer[BUFFER_SIZE];
+  int len = recv(from_sock, buffer, BUFFER_SIZE, 0);
+  ```
+
+- If data is successfully received (i.e., `len` is greater than 0), the function proceeds to send this data to the `to_sock` socket using the `send` function. The `send` function is used to send data on a socket.
+
+  ```c
+  if (len > 0) {
+      send(to_sock, buffer, len, 0);
+  }
+  ```
+
+- The purpose of this forwarding mechanism is to relay data between two sockets. For example, in the context of packet redirection, data arriving at the local socket (`from_sock`) is forwarded to the remote socket (`to_sock`), and vice versa. This enables communication between the local and remote endpoints.
+
+- The function doesn't perform any data manipulation or interpretation; it merely transfers data from one socket to another.
+
+- The `forward` function is typically called within the main packet redirection loop when there is data available to be forwarded.
+
+Overall, the `forward` function is essential for the core functionality of packet redirection, as it ensures that data can flow bidirectionally between the local and remote endpoints, allowing for the redirection of network traffic.
+
+
+///////
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+
+// Utility function to extract the IP header from a packet
+struct ip *parse_ip_header(char *packet) {
+    return (struct ip *)packet;
+}
+
+// Utility function to extract the TCP header from a packet
+struct tcphdr *parse_tcp_header(char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return (struct tcphdr *)(packet + ip_header->ip_hl * 4);
+}
+
+// Utility function to extract the UDP header from a packet
+struct udphdr *parse_udp_header(char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return (struct udphdr *)(packet + ip_header->ip_hl * 4);
+}
+
+// Utility function to make any necessary modifications to a packet before redirection
+void modify_packet(char *packet, int packet_length, struct RedirectionArgs *args) {
+    struct ip *ip_header = parse_ip_header(packet);
+
+    if (args->is_tcp) {
+        // Modify TCP source and destination ports if needed
+        struct tcphdr *tcp_header = parse_tcp_header(packet);
+        if (ntohs(tcp_header->th_sport) == args->sending_port) {
+            tcp_header->th_sport = htons(args->redirection_port);
+        } else if (ntohs(tcp_header->th_dport) == args->sending_port) {
+            tcp_header->th_dport = htons(args->redirection_port);
+        }
+    } else {
+        // Modify UDP source and destination ports if needed
+        struct udphdr *udp_header = parse_udp_header(packet);
+        if (ntohs(udp_header->uh_sport) == args->sending_port) {
+            udp_header->uh_sport = htons(args->redirection_port);
+        } else if (ntohs(udp_header->uh_dport) == args->sending_port) {
+            udp_header->uh_dport = htons(args->redirection_port);
+        }
+    }
+
+    // Recalculate IP checksum (optional, depends on your use case)
+    ip_header->ip_sum = 0;
+    ip_header->ip_sum = checksum((uint16_t *)ip_header, sizeof(struct ip));
+}
+
+// Function to calculate the checksum
+uint16_t checksum(uint16_t *addr, int count) {
+    unsigned long sum = 0;
+    while (count > 1) {
+        sum += *addr++;
+        count -= 2;
+    }
+
+    if (count > 0) {
+        sum += *(unsigned char *)addr;
+    }
+
+    while (sum >> 16) {
+        sum = (sum & 0xFFFF) + (sum >> 16);
+    }
+
+    return (uint16_t)~sum;
+}
+
+
+
+//////
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <stdbool.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+
+#define BUFFER_SIZE 4096
+
+// Structure to hold redirection parameters
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+// Function to create and bind a socket
+int create_and_bind(const char *ip, int port, int type) {
+    // ... (existing implementation)
+}
+
+// Function to create and connect a socket to a remote server
+int create_and_connect(const char *ip, int port, int type) {
+    // ... (existing implementation)
+}
+
+// Function to forward data from one socket to another
+void forward(int from_sock, int to_sock) {
+    // ... (existing implementation)
+}
+
+// Function to handle packet redirection for TCP traffic
+void forward_packets_tcp(struct RedirectionArgs *args) {
+    // ... (existing implementation)
+}
+
+// Function to handle packet redirection for UDP traffic
+void forward_packets_udp(struct RedirectionArgs *args) {
+    // ... (existing implementation)
+}
+
+// Function to parse a configuration line and populate RedirectionArgs
+int parse_config_line(const char *line, struct RedirectionArgs *args) {
+    // ... (existing implementation)
+}
+
+// Utility function to extract the IP header from a packet
+struct ip *parse_ip_header(char *packet) {
+    // ... (implementation)
+}
+
+// Utility function to extract the TCP header from a packet
+struct tcphdr *parse_tcp_header(char *packet) {
+    // ... (implementation)
+}
+
+// Utility function to extract the UDP header from a packet
+struct udphdr *parse_udp_header(char *packet) {
+    // ... (implementation)
+}
+
+// Utility function to make any necessary modifications to a packet before redirection
+void modify_packet(char *packet, int packet_length, struct RedirectionArgs *args) {
+    // ... (implementation)
+}
+
+// Function to calculate the checksum
+uint16_t checksum(uint16_t *addr, int count) {
+    // ... (implementation)
+}
+
+int main(int argc, char *argv[]) {
+    // ... (main function as before)
+}
+
+   
+//////// monitor_redirection_status
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <stdbool.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+
+#define BUFFER_SIZE 4096
+
+// ... (Previous code including utility functions)
+
+// Function to periodically monitor the redirection status
+void monitor_redirection_status(struct RedirectionArgs *args) {
+    while (1) {
+        // Check if the redirection is still active
+        int sending_sock = create_and_bind(args->sending_ip, args->sending_port, args->is_tcp ? SOCK_STREAM : SOCK_DGRAM);
+        int redirection_sock = create_and_connect(args->redirection_ip, args->redirection_port, args->is_tcp ? SOCK_STREAM : SOCK_DGRAM);
+
+        // Attempt to send a test packet and see if it succeeds
+        char test_packet[8] = "PING123";
+        if (send(sending_sock, test_packet, sizeof(test_packet), 0) != -1) {
+            // Redirection is active
+            printf("Redirection is active for %s:%d -> %s:%d\n",
+                   args->sending_ip, args->sending_port,
+                   args->redirection_ip, args->redirection_port);
+        } else {
+            // Redirection is not active
+            printf("Redirection is no longer active for %s:%d -> %s:%d\n",
+                   args->sending_ip, args->sending_port,
+                   args->redirection_ip, args->redirection_port);
+        }
+
+        // Close the sockets
+        close(sending_sock);
+        close(redirection_sock);
+
+        sleep(60); // Sleep for 60 seconds (adjust the interval as needed)
+    }
+}
+
+int main(int argc, char *argv[]) {
+    // ... (Previous main function code)
+
+    if (args.is_tcp) {
+        forward_packets_tcp(&args);
+    } else {
+        forward_packets_udp(&args);
+    }
+
+    // Start the redirection status monitoring in the background
+    // Pass the 'args' structure to monitor the specified redirection
+    // You can customize the monitoring logic and interval as needed
+    monitor_redirection_status(&args);
+
+    return 0;
+}
+
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <stdbool.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+
+#define BUFFER_SIZE 4096
+
+// Structure to hold redirection parameters
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+// Function to handle errors and exit with an error message
+void error_exit(const char *message);
+
+// Function to create a socket
+int create_socket(int protocol, int sock_type);
+
+// Function to create and connect a socket to a remote server
+int create_and_connect(const char *host, int port, int sock_type);
+
+// Function to forward data from one socket to another
+void forward(int src_sock, int dest_sock);
+
+// Function to handle packet redirection for TCP traffic
+void forward_packets_tcp(struct RedirectionArgs *args);
+
+// Function to handle packet redirection for UDP traffic
+void forward_packets_udp(struct RedirectionArgs *args);
+
+// Function to parse a configuration line and populate RedirectionArgs
+int parse_config_line(const char *line, struct RedirectionArgs *args);
+
+// Utility function to extract the IP header from a packet
+struct ip *parse_ip_header(char *packet);
+
+// Utility function to extract the TCP header from a packet
+struct tcphdr *parse_tcp_header(char *packet);
+
+// Utility function to extract the UDP header from a packet
+struct udphdr *parse_udp_header(char *packet);
+
+// Utility function to make any necessary modifications to a packet before redirection
+void modify_packet(char *packet, int packet_length, struct RedirectionArgs *args);
+
+// Function to calculate the checksum
+uint16_t checksum(uint16_t *addr, int count);
+
+// Function to periodically monitor the redirection status
+void monitor_redirection_status(struct RedirectionArgs *args);
+
+// The main function to handle command-line arguments and start redirections
+int main(int argc, char *argv[]);
