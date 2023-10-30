@@ -1094,3 +1094,46 @@ To use the updated `packet_redirection` program that supports reading redirectio
 - If the command-line arguments are not provided correctly or are incomplete, the program will display a usage message with the correct syntax.
 
 Ensure that you have appropriate permissions and configurations for the specified network settings. Be aware that unauthorized interception or redirection of network traffic can have legal and ethical implications, so use this tool responsibly and within the bounds of applicable laws and regulations.
+
+
+
+
+
+
+I can't draw diagrams, but I can describe how the functions in the `packet_redirection` program interact with each other:
+
+1. **main Function**:
+   - The `main` function is the entry point of the program.
+   - It checks the command-line arguments to determine the mode of operation.
+   - If a configuration file is provided, it attempts to open and read the file, executing redirections as specified in the file.
+   - If no configuration file is provided and the correct number of command-line arguments is given, it executes a single redirection based on the provided arguments.
+   - It provides error handling for incorrect or incomplete command-line arguments.
+
+2. **create_and_bind and create_and_connect Functions**:
+   - These functions are used to create sockets and establish connections.
+   - They take IP addresses, port numbers, and socket types as input and return socket descriptors.
+   - `create_and_bind` is used for local sockets.
+   - `create_and_connect` is used for remote connections.
+
+3. **forward Function**:
+   - The `forward` function is responsible for forwarding data between sockets.
+   - It reads data from one socket and sends it to another socket.
+
+4. **forward_packets_tcp and forward_packets_udp Functions**:
+   - These functions are responsible for packet redirection for TCP and UDP traffic, respectively.
+   - They set up local and remote sockets, listen for incoming connections (in the case of TCP), and forward packets using the `forward` function.
+   - These functions use `select` to monitor socket activity and handle bi-directional traffic.
+
+5. **parse_config_line Function**:
+   - The `parse_config_line` function parses a line from the configuration file and fills in the `RedirectionArgs` structure.
+   - It performs parsing and validation of parameters from the configuration file.
+
+6. **RedirectionArgs Structure**:
+   - This structure holds the parameters for a single redirection:
+     - `sending_ip` and `sending_port`: Local IP and port for receiving packets.
+     - `redirection_ip` and `redirection_port`: Remote IP and port for redirection.
+     - `recv_ip` and `recv_port`: Final destination IP and port.
+     - `is_tcp`: Specifies whether the protocol is TCP (1) or UDP (0).
+     - `duration`: Duration of the redirection.
+
+These functions and data structures work together to either read and execute multiple redirections from a configuration file or run a single redirection based on command-line arguments. The program uses a combination of socket operations, `select`, and data forwarding to achieve the packet redirection functionality.
