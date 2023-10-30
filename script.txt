@@ -988,8 +988,23 @@ void forward_packets_udp(struct RedirectionArgs *args) {
 }
 
 int parse_config_line(const char *line, struct RedirectionArgs *args) {
-    // Implementation for parse_config_line function (same as before)
+    // Parse the line and fill in the args structure
+    // Example parsing code (you can modify as needed):
+    int result = sscanf(line, "%15s %d %15s %d %15s %d %4s %d",
+        args->sending_ip, &args->sending_port,
+        args->redirection_ip, &args->redirection_port,
+        args->recv_ip, &args->recv_port,
+        args->protocol, &args->duration);
+
+    // Check if parsing was successful
+    if (result == 8) {
+        return 1; // Successful parsing
+    } else {
+        fprintf(stderr, "Invalid configuration line: %s", line);
+        return 0; // Parsing failed
+    }
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc == 2) {
