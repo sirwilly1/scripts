@@ -1504,3 +1504,206 @@ void monitor_redirection_status(struct RedirectionArgs *args);
 
 // The main function to handle command-line arguments and start redirections
 int main(int argc, char *argv[]);
+
+
+
+
+
+
+
+
+
+
+/////pcap 
+
+#include <stdio.h>
+#include <pcap.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <arpa/inet.h>
+
+struct redirection_rules {
+    char source_ip[16];
+    char destination_ip[16];
+    int source_port;
+    int destination_port;
+} rules;
+
+void initialize_capture(pcap_t **handle, const char *device) {
+    char errbuf[PCAP_ERRBUF_SIZE];
+    *handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
+    if (*handle == NULL) {
+        report_error(errbuf);
+    }
+}
+
+void configure_redirection_rules() {
+    strcpy(rules.source_ip, "192.168.1.10");
+    rules.source_port = 80;
+    strcpy(rules.destination_ip, "192.168.1.20");
+    rules.destination_port = 8080;
+}
+
+void packet_handler(u_char *user_data, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
+    if (is_packet_tcp(packet)) {
+        handle_tcp_packet(packet);
+    } else if (is_packet_udp(packet)) {
+        handle_udp_packet(packet);
+    }
+}
+
+void handle_tcp_packet(const u_char *packet) {
+    struct tcphdr *tcp_header = parse_tcp_header(packet);
+    modify_packet((u_char *)packet);
+    log_packet_details(packet);
+    redirect_tcp_packet((u_char *)packet, tcp_header);
+}
+
+void handle_udp_packet(const u_char *packet) {
+    struct udphdr *udp_header = parse_udp_header(packet);
+    modify_packet((u_char *)packet);
+    log_packet_details(packet);
+    redirect_udp_packet((u_char *)packet, udp_header);
+}
+
+int is_packet_tcp(const u_char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return ip_header->ip_p == IPPROTO_TCP;
+}
+
+int is_packet_udp(const u_char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return ip_header->ip_p == IPPROTO_UDP;
+}
+
+void redirect_tcp_packet(u_char *packet, struct tcphdr *tcp_header) {
+    struct ip *ip_header = parse_ip_header(packet);
+    if (strcmp(inet_ntoa(ip_header->ip_dst), rules.source_ip) == 0 && ntohs(tcp_header->dest) == rules.source_port) {
+        inet_aton(rules.destination_ip, &(ip_header->ip_dst));
+        tcp_header->dest = htons(rules.destination_port);
+        printf("TCP packet redirected to %s:%d\n", rules.destination_ip, rules.destination_port);
+    }
+}
+
+void redirect_udp_packet(u_char *packet, struct udphdr *udp_header) {
+    struct ip *ip_header = parse_ip_header(packet);
+    if (strcmp(inet_ntoa(ip_header->ip_dst), rules.source_ip) == 0 && ntohs(udp_header->dest) == rules.source_port) {
+        inet_aton(rules.destination_ip, &(ip_header->ip_dst));
+        udp_header->dest = htons(rules.destination_port);
+        printf("UDP packet redirected to %s:%d\n", rules.destination_ip, rules.destination_port);
+    }
+}
+
+void log_packet_details(const u_char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    printf("Packet: %s -> %s\n", inet_ntoa(ip_header->ip_src), inet_ntoa(ip_header->ip_dst));
+}
+
+void report_error(const char *error_message) {
+    fprintf(stderr, "Error: %s\n", error_message);
+}
+
+struct ip *parse_ip_header(const u_char *packet) {
+    return (struct ip *)(packet + 14);
+}
+
+struct tcphdr *parse_tcp_header(const u_char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return (struct tcphdr *)(packet + 14 + (ip_header->ip_hl << 2));
+}
+
+struct udphdr *parse_udp_header(const u_char *packet) {
+    struct ip *ip_header = parse_ip_header(packet);
+    return (struct udphdr *)(packet + 14 + (ip_header->ip_hl << 2));
+}
+
+void modify_packet(u_char *packet) {
+    // For this example, we aren't performing any extra modifications.
+    // But this is where you'd add code if you wanted to modify packet payload, etc.
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("Usage: %s <interface>\n", argv[0]);
+        return 1;
+    }
+
+    pcap_t *handle;
+    initialize_capture(&handle, argv[1]);
+    configure_redirection_rules();
+    pcap_loop(handle, 0, packet_handler, NULL);
+    pcap_close(handle);
+    return 0;
+}
+
+
+To utilize the provided code, you'll need to follow these steps:
+
+1. **Install the Necessary Libraries**:
+
+   Before you can compile and run the program, you need to have the `libpcap` development libraries installed. The installation procedure varies based on your OS. Here's how to do it on some common systems:
+
+   - **Ubuntu/Debian**:
+     ```bash
+     sudo apt-get update
+     sudo apt-get install libpcap-dev
+     ```
+
+   - **Fedora**:
+     ```bash
+     sudo dnf install libpcap-devel
+     ```
+
+   - **CentOS/RedHat**:
+     ```bash
+     sudo yum install libpcap-devel
+     ```
+
+   - **macOS** (using Homebrew):
+     ```bash
+     brew install libpcap
+     ```
+
+2. **Compile the Code**:
+
+   Save the code to a file, e.g., `packet_redirect.c`. Then, compile the code using `gcc`:
+
+   ```bash
+   gcc packet_redirect.c -o packet_redirect -lpcap
+   ```
+
+   This will generate an executable named `packet_redirect`.
+
+3. **Run the Program**:
+
+   Since packet capturing typically requires root privileges, run the program with `sudo`:
+
+   ```bash
+   sudo ./packet_redirect <interface_name>
+   ```
+
+   Replace `<interface_name>` with the name of the network interface you want to capture packets from (e.g., `eth0`, `wlan0`, etc.).
+
+   You can list available network interfaces using the `ifconfig` command (or `ip a` on some systems).
+
+4. **Monitor and Test**:
+
+   Once the program is running, any packets meeting the criteria specified in the `configure_redirection_rules()` function (in the example, any TCP packets heading to `192.168.1.10` on port `80`) will be logged and their destination will be changed as per the rules.
+
+   You can send test packets using tools like `netcat` or `telnet` and observe the program's output to ensure it's working.
+
+5. **Termination**:
+
+   To stop the program, you can usually use `Ctrl+C` in the terminal.
+
+6. **Refinements**:
+
+   The code provided is a basic skeleton. Depending on your needs, you might want to:
+
+   - Add more sophisticated redirection rules.
+   - Handle potential errors and exceptions more gracefully.
+   - Address performance considerations if dealing with a large volume of packets.
+   - Properly handle packet checksums when modifying packet contents.
+
+Remember, this code is for educational purposes. Deploying such a program in a production environment, especially on a live network, requires careful consideration of its implications, thorough testing, and adherence to relevant laws and best practices.
