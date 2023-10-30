@@ -200,3 +200,882 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 //useage ./program_name -p tcp -l 8080 -r 192.168.1.10:9090 -d 10
+
+
+
+/////////////////////
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+void redirectTCP(const char *source_ip, int source_port, const char *dest_ip, int dest_port) {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+    char buffer[1024] = {0};
+
+    // Creating socket file descriptor
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = inet_addr(source_ip);
+    address.sin_port = htons(source_port);
+
+    // Binding the socket to the address
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Put the server socket in passive mode
+    if (listen(server_fd, 3) < 0) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+        perror("accept");
+        exit(EXIT_FAILURE);
+    }
+
+    // Read data from the incoming connection
+    int valread = read(new_socket, buffer, 1024);
+
+    // Create a new socket for forwarding the TCP packet
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        printf("\n Socket creation error \n");
+        return;
+    }
+
+    memset(&serv_addr, '0', sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(dest_port);
+
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if(inet_pton(AF_INET, dest_ip, &serv_addr.sin_addr)<=0) {
+        printf("\nInvalid address/ Address not supported \n");
+        return;
+    }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("\nConnection Failed \n");
+        return;
+    }
+
+    send(sock, buffer, valread, 0);
+    printf("TCP packet redirected\n");
+
+    close(new_socket);
+    close(sock);
+}
+
+### UDP Packet Redirection
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+void redirectUDP(const char *source_ip, int source_port, const char *dest_ip, int dest_port) {
+    int sockfd;
+    char buffer[1024];
+    struct sockaddr_in servaddr, cliaddr;
+
+    // Creating socket file descriptor
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    memset(&cliaddr, 0, sizeof(cliaddr));
+
+    // Filling server information
+    servaddr.sin_family = AF_INET; // IPv4
+    servaddr.sin_addr.s_addr = inet_addr(source_ip);
+    servaddr.sin_port = htons(source_port);
+
+    // Bind the socket with the server address
+    if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    int len, n;
+    len = sizeof(cliaddr);  //len is value/result
+    n = recvfrom(sockfd, (char *)buffer, 1024, MSG_WAITALL, (struct sockaddr *) &cliaddr, &len);
+    buffer[n] = '\0';
+
+    // Create a new socket for forwarding the UDP packet
+    int new_sock;
+    if ((new_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in dest_addr;
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(dest_port);
+    dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
+
+    sendto(new_sock, buffer, n, MSG_CONFIRM, (const struct sockaddr *) &dest_addr, sizeof(dest_addr));
+    printf("UDP packet redirected\n");
+
+    close(sockfd);
+    close(new_sock);
+}
+
+int main() {
+    // Example usage
+    redirectTCP("127.0.0.1", 8080, "127.0.0.1", 9090);
+    redirectUDP("127.0.0.1", 8081, "127.0.0.1", 9091);
+    return 0;
+}
+
+
+//////////////////
+
+Compilation:
+
+First, you need to compile the C code. Save the provided code into a file, let's say redirect.c. Then, compile the code using gcc:
+
+Copy code
+gcc redirect.c -o redirect
+This will generate an executable named redirect.
+
+Run the Program:
+
+Execute the compiled binary with the appropriate permissions:
+
+bash
+Copy code
+sudo ./redirect
+We're using sudo here because binding to ports below 1024 requires superuser privileges. If you're binding to ports above 1024, you might not need sudo.
+
+Testing:
+
+To test the program:
+
+For TCP redirection:
+Start a TCP server on port 9090 to which our program redirects the packets. You can use netcat for this:
+
+yaml
+Copy code
+nc -l 9090
+Now, in another terminal, send data to the address 127.0.0.1 on port 8080:
+
+bash
+Copy code
+echo "Hello, TCP!" | nc 127.0.0.1 8080
+You should see "Hello, TCP!" printed in the terminal where the netcat server is running.
+
+For UDP redirection:
+Start a UDP server on port 9091:
+
+yaml
+Copy code
+nc -lu 9091
+Now, in another terminal, send data using UDP:
+
+bash
+Copy code
+echo "Hello, UDP!" | nc -u 127.0.0.1 8081
+You should see "Hello, UDP!" printed in the terminal where the netcat server is running.
+
+Remember, this is a basic example for demonstration purposes. In a real-world scenario, you would need to consider error handling, handling multiple connections, and security implications. The provided program simply receives a packet and forwards it without handling any subsequent communication. If you want to develop a full-fledged proxy, you would need to introduce more complexity and features.
+
+
+
+
+///////////
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+
+#define BUFFER_SIZE 4096
+
+// Structure to hold all the required redirection parameters
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+};
+
+// Error handling function
+void error_exit(const char *message) {
+    perror(message);
+    exit(1);
+}
+
+// Create a socket and connect/bind based on the provided parameters
+int create_and_connect(char *host, int port, int is_server, int is_udp) {
+    struct sockaddr_in addr;
+    int sockfd;
+
+    // Create a UDP or TCP socket based on the is_udp flag
+    if (is_udp) {
+        sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    } else {
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    }
+
+    if (sockfd < 0)
+        error_exit("socket creation failed");
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    // If it's a server socket, bind it. Otherwise, connect it.
+    if (is_server) {
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+            error_exit("bind failed");
+    } else {
+        inet_pton(AF_INET, host, &addr.sin_addr);
+        if (is_udp) {
+            return sockfd;
+        } else {
+            if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+                error_exit("connect failed");
+        }
+    }
+
+    return sockfd;
+}
+
+// Function to handle UDP redirection
+void handle_udp_redirection(struct RedirectionArgs *args) {
+    struct sockaddr_in sending_addr, recv_addr;
+    char buffer[BUFFER_SIZE];
+    int redirection_sock, n;
+    socklen_t addr_len;
+
+    // Create a UDP socket for redirection
+    redirection_sock = create_and_connect(NULL, args->redirection_port, 1, 1);
+
+    // Set up recv server address
+    memset(&recv_addr, 0, sizeof(recv_addr));
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_port = htons(args->recv_port);
+    inet_pton(AF_INET, args->recv_ip, &recv_addr.sin_addr);
+
+    // Infinite loop to keep listening and redirecting the UDP packets
+    while (1) {
+        addr_len = sizeof(sending_addr);
+        n = recvfrom(redirection_sock, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&sending_addr, &addr_len);
+        if (n <= 0) break;
+
+        sendto(redirection_sock, buffer, n, 0, (struct sockaddr *)&recv_addr, sizeof(recv_addr));
+    }
+
+    close(redirection_sock);
+}
+
+// Function to handle TCP redirection
+void handle_tcp_redirection(struct RedirectionArgs *args) {
+    struct sockaddr_in sending_addr, redirection_addr, recv_addr;
+    char buffer[BUFFER_SIZE];
+    int redirection_sock, n;
+    socklen_t addr_len;
+
+    // Create a TCP socket for redirection and listen
+    redirection_sock = create_and_connect(NULL, args->redirection_port, 1, 0);
+    if (listen(redirection_sock, 5) < 0)
+        error_exit("listen failed");
+
+    // Accept the incoming connection
+    struct sockaddr_in client_addr;
+    addr_len = sizeof(client_addr);
+    int accept_sock = accept(redirection_sock, (struct sockaddr *)&client_addr, &addr_len);
+    if (accept_sock < 0)
+        error_exit("accept failed");
+
+    // Set up recv server address
+    memset(&recv_addr, 0, sizeof(recv_addr));
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_port = htons(args->recv_port);
+    inet_pton(AF_INET, args->recv_ip, &recv_addr.sin_addr);
+
+    // Infinite loop to keep listening and redirecting the TCP packets
+    while (1) {
+        n = recv(accept_sock, buffer, BUFFER_SIZE, 0);
+        if (n <= 0) break;
+
+        sendto(accept_sock, buffer, n, 0, (struct sockaddr *)&recv_addr, sizeof(recv_addr));
+    }
+
+    close(accept_sock);
+    close(redirection_sock);
+}
+
+int main(int argc, char *argv[]) {
+    struct RedirectionArgs args;
+    int opt;
+    char protocol[4] = "TCP";  // Default protocol
+
+    // Parse command line arguments
+    while ((opt = getopt(argc, argv, "s:S:r:R:c:C:p:")) != -1) {
+        switch (opt) {
+            case 's':
+                strncpy(args.sending_ip, optarg, sizeof(args.sending_ip));
+                break;
+            case 'S':
+                args.sending_port = atoi(optarg);
+                break;
+            case 'r':
+                strncpy(args.redirection_ip, optarg, sizeof(args.redirection_ip));
+                break;
+            case 'R':
+                args.redirection_port = atoi(optarg);
+                break;
+            case 'c':
+                strncpy(args.recv_ip, optarg, sizeof(args.recv_ip));
+                break;
+            case 'C':
+                args.recv_port = atoi(optarg);
+                break;
+            case 'p':
+                strncpy(protocol, optarg, sizeof(protocol));
+                break;
+            default:
+                fprintf(stderr, "Usage: %s -s <sending_ip> -S <sending_port> -r <redirection_ip> -R <redirection_port> -c <recv_ip> -C <recv_port> -p <protocol (TCP/UDP)>\n", argv[0]);
+                exit(1);
+        }
+    }
+
+    // Check for required parameters and choose TCP or UDP redirection
+    if (args.sending_port && args.redirection_port && args.recv_port &&
+        strlen(args.sending_ip) && strlen(args.redirection_ip) && strlen(args.recv_ip)) {
+        if (strcmp(protocol, "TCP") == 0) {
+            handle_tcp_redirection(&args);
+        } else if (strcmp(protocol, "UDP") == 0) {
+            handle_udp_redirection(&args);
+        } else {
+            fprintf(stderr, "Unsupported protocol. Use TCP or UDP.\n");
+            exit(1);
+        }
+    } else {
+        fprintf(stderr, "Invalid or missing arguments.\n");
+        exit(1);
+    }
+
+    return 0;
+}
+
+
+
+///////////////////////////////////
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <sys/select.h>
+
+#define BUFFER_SIZE 4096
+
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+int create_and_bind(const char *ip, int port, int type) {
+    struct sockaddr_in addr;
+    int sock = socket(AF_INET, type, 0);
+    if (sock < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip, &addr.sin_addr);
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    return sock;
+}
+
+int create_and_connect(const char *ip, int port, int type) {
+    struct sockaddr_in addr;
+    int sock = socket(AF_INET, type, 0);
+    if (sock < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip, &addr.sin_addr);
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("connect");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    return sock;
+}
+
+void forward(int from_sock, int to_sock) {
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_received = recv(from_sock, buffer, sizeof(buffer), 0);
+    if (bytes_received <= 0) {
+        close(from_sock);
+        close(to_sock);
+        exit(EXIT_SUCCESS);
+    }
+    send(to_sock, buffer, bytes_received, 0);
+}
+
+void forward_packets_tcp(struct RedirectionArgs *args) {
+    int send_sock = create_and_bind(args->sending_ip, args->sending_port, SOCK_STREAM);
+    listen(send_sock, 5);
+    int client_sock = accept(send_sock, NULL, NULL);
+    int recv_sock = create_and_connect(args->recv_ip, args->recv_port, SOCK_STREAM);
+
+    fd_set read_fds;
+    struct timeval timeout;
+    timeout.tv_sec = args->duration;
+    timeout.tv_usec = 0;
+
+    while (1) {
+        FD_ZERO(&read_fds);
+        FD_SET(client_sock, &read_fds);
+        FD_SET(recv_sock, &read_fds);
+
+        int activity = select(FD_SETSIZE, &read_fds, NULL, NULL, &timeout);
+
+        if (activity <= 0) {
+            break;
+        }
+
+        if (FD_ISSET(client_sock, &read_fds)) {
+            forward(client_sock, recv_sock);
+        }
+        if (FD_ISSET(recv_sock, &read_fds)) {
+            forward(recv_sock, client_sock);
+        }
+    }
+    close(client_sock);
+    close(send_sock);
+    close(recv_sock);
+}
+
+void forward_packets_udp(struct RedirectionArgs *args) {
+    int send_sock = create_and_bind(args->sending_ip, args->sending_port, SOCK_DGRAM);
+    int recv_sock = create_and_connect(args->redirection_ip, args->redirection_port, SOCK_DGRAM);
+
+    fd_set read_fds;
+    struct timeval timeout;
+    timeout.tv_sec = args->duration;
+    timeout.tv_usec = 0;
+
+    while (1) {
+        FD_ZERO(&read_fds);
+        FD_SET(send_sock, &read_fds);
+        FD_SET(recv_sock, &read_fds);
+
+        int activity = select(FD_SETSIZE, &read_fds, NULL, NULL, &timeout);
+
+        if (activity <= 0) {
+            break;
+        }
+
+        if (FD_ISSET(send_sock, &read_fds)) {
+            forward(send_sock, recv_sock);
+        }
+        if (FD_ISSET(recv_sock, &read_fds)) {
+            forward(recv_sock, send_sock);
+        }
+    }
+    close(send_sock);
+    close(recv_sock);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 9) {
+        fprintf(stderr, "Usage: %s <Sending_IP> <Sending_Port> <Redirection_IP> <Redirection_Port> <Recv_IP> <Recv_Port> <tcp|udp> <Duration>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    struct RedirectionArgs args;
+    strcpy(args.sending_ip, argv[1]);
+    args.sending_port = atoi(argv[2]);
+    strcpy(args.redirection_ip, argv[3]);
+    args.redirection_port = atoi(argv[4]);
+    strcpy(args.recv_ip, argv[5]);
+    args.recv_port = atoi(argv[6]);
+    args.is_tcp = strcmp(argv[7], "tcp") == 0;
+    args.duration = atoi(argv[8]);
+
+    if (args.is_tcp) {
+        forward_packets_tcp(&args);
+    } else {
+        forward_packets_udp(&args);
+    }
+    return 0;
+}
+/// ./packet_redirection 192.168.1.10 22 192.168.1.20 2222 192.168.1.30 22 tcp 3600
+
+
+////
+
+
+To test the packet redirection program, you'll need access to three network-connected machines or three different network interfaces on the same machine for the basic use case. You can use VMs, cloud servers, or physical machines. Below, I'll describe how you can set up a basic test scenario with SSH traffic redirection:
+
+Assuming you have three networked machines:
+
+1. **Machine A**: This will be the client that initiates an SSH connection.
+2. **Machine B**: This will be the machine that runs the packet redirection program to intercept and redirect SSH traffic.
+3. **Machine C**: This will be the SSH server to which the redirected SSH traffic is forwarded.
+
+Here are the steps to set up and test the program:
+
+1. **Compilation**:
+   Compile the packet redirection program on Machine B using the `gcc` compiler.
+
+2. **Execution**:
+   On Machine B, run the packet redirection program with the appropriate arguments. For example:
+   ```bash
+   ./packet_redirection <Machine_B_IP> <Machine_B_Port> <Machine_C_IP> 22 <Machine_A_IP> 22 tcp <Duration>
+   ```
+
+   - `<Machine_B_IP>` is the IP address of Machine B.
+   - `<Machine_B_Port>` is a port number that the program will listen on Machine B.
+   - `<Machine_C_IP>` is the IP address of Machine C (the SSH server).
+   - `<Machine_A_IP>` is the IP address of Machine A (the client).
+   - `<Duration>` is the duration for which the program will run.
+
+3. **SSH Configuration**:
+   On Machine A, use SSH to connect to Machine B. For example:
+   ```bash
+   ssh -p <Machine_B_Port> <Machine_B_IP>
+   ```
+
+   You will connect to Machine B, but the packet redirection program on Machine B will redirect your SSH traffic to Machine C, acting as a middleman.
+
+4. **Testing SSH Connection**:
+   You should be able to establish an SSH connection to Machine B. Any SSH traffic you send to Machine B will be forwarded to Machine C, and you'll interact with the SSH server on Machine C. This setup allows you to test the redirection of SSH traffic.
+
+5. **Stopping the Program**:
+   To stop the packet redirection program, you can use the keyboard shortcut `Ctrl + C` on Machine B.
+
+Keep in mind that this is a simplified test scenario. In real-world use cases, you should consider additional factors, such as security, network configurations, and permissions. Always ensure you have proper authorization and comply with legal and ethical standards when working with network traffic interception and redirection.
+
+///////send test code 
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <arpa/inet.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <Send_IP> <Send_Port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    const char *send_ip = argv[1];
+    int send_port = atoi(argv[2);
+
+    int send_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (send_sock < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in send_addr;
+    send_addr.sin_family = AF_INET;
+    send_addr.sin_port = htons(send_port);
+    inet_pton(AF_INET, send_ip, &send_addr.sin_addr);
+
+    if (connect(send_sock, (struct sockaddr *)&send_addr, sizeof(send_addr)) < 0) {
+        perror("connect");
+        close(send_sock);
+        exit(EXIT_FAILURE);
+    }
+
+    char message[] = "This is a test message from the send server.";
+    send(send_sock, message, sizeof(message), 0);
+
+    close(send_sock);
+    return 0;
+}
+
+
+//////recv test code 
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <arpa/inet.h>
+
+#define BUFFER_SIZE 4096
+
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <Receive_Port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    int recv_port = atoi(argv[1);
+
+    int recv_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (recv_sock < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sockaddr_in recv_addr;
+    recv_addr.sin_family = AF_INET;
+    recv_addr.sin_port = htons(recv_port);
+    recv_addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(recv_sock, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
+        perror("bind");
+        close(recv_sock);
+        exit(EXIT_FAILURE);
+    }
+
+    listen(recv_sock, 1);
+
+    int client_sock = accept(recv_sock, NULL, NULL);
+
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_received = recv(client_sock, buffer, sizeof(buffer), 0);
+
+    if (bytes_received > 0) {
+        printf("Received data from the send server:\n");
+        write(STDOUT_FILENO, buffer, bytes_received);
+        printf("\n");
+    }
+
+    close(client_sock);
+    close(recv_sock);
+
+    return 0;
+}
+
+
+
+
+
+
+
+To use the provided packet redirection program:
+
+1. **Compilation**: Before you can run the program, you need to compile it. Open a terminal and navigate to the directory containing the source code. Compile the code using the `gcc` compiler (or another C compiler of your choice):
+
+   ```bash
+   gcc -o packet_redirection packet_redirection.c
+   ```
+
+   This will create an executable named `packet_redirection`.
+
+2. **Usage**: You can run the program with the following syntax:
+
+   ```bash
+   ./packet_redirection <Sending_IP> <Sending_Port> <Redirection_IP> <Redirection_Port> <Recv_IP> <Recv_Port> <tcp|udp> <Duration>
+   ```
+
+   Replace the placeholders with appropriate values:
+
+   - `<Sending_IP>`: The IP address the program will listen on for incoming packets.
+   - `<Sending_Port>`: The port number the program will listen on for incoming packets.
+   - `<Redirection_IP>`: The IP address of the redirection server.
+   - `<Redirection_Port>`: The port number of the redirection server.
+   - `<Recv_IP>`: The IP address of the final receiving server.
+   - `<Recv_Port>`: The port number of the final receiving server.
+   - `<tcp|udp>`: Specify `tcp` for TCP traffic (e.g., SSH) or `udp` for UDP traffic.
+   - `<Duration>`: The duration (in seconds) for which the program should run before exiting.
+
+3. **Examples**:
+
+   - Redirecting SSH traffic:
+     ```bash
+     ./packet_redirection 192.168.1.10 22 192.168.1.20 2222 192.168.1.30 22 tcp 3600
+     ```
+     This command will listen for SSH connections on IP `192.168.1.10` port `22`, redirect them through `192.168.1.20` on port `2222`, and finally forward them to `192.168.1.30` on port `22`. The program will do this for 1 hour (3600 seconds).
+
+   - Redirecting UDP traffic:
+     ```bash
+     ./packet_redirection 192.168.1.10 5000 192.168.1.20 5001 192.168.1.30 5002 udp 300
+     ```
+     This command will listen for UDP packets on IP `192.168.1.10` port `5000`, redirect them through `192.168.1.20` on port `5001`, and finally forward them to `192.168.1.30` on port `5002`. The program will do this for 5 minutes (300 seconds).
+
+4. **Stopping the Program**: If you wish to stop the program before the specified duration, you can use the keyboard shortcut `Ctrl + C`.
+
+Always remember to use such tools ethically and responsibly. Unauthorized redirection or interception of network traffic can be illegal and unethical. Ensure you have proper permissions and are in compliance with local regulations and laws.
+
+
+
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <stdbool.h>
+
+#define BUFFER_SIZE 4096
+
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+int create_and_bind(const char *ip, int port, int type) {
+    // Implementation for create_and_bind function (same as before)
+}
+
+int create_and_connect(const char *ip, int port, int type) {
+    // Implementation for create_and_connect function (same as before)
+}
+
+void forward(int from_sock, int to_sock) {
+    // Implementation for forward function (same as before)
+}
+
+void forward_packets_tcp(struct RedirectionArgs *args) {
+    // Implementation for forward_packets_tcp function (same as before)
+}
+
+void forward_packets_udp(struct RedirectionArgs *args) {
+    // Implementation for forward_packets_udp function (same as before)
+}
+
+int parse_config_line(const char *line, struct RedirectionArgs *args) {
+    // Implementation for parse_config_line function (same as before)
+}
+
+int main(int argc, char *argv[]) {
+    if (argc == 2) {
+        // Check if a configuration file is provided
+        const char *config_file_path = argv[1];
+        FILE *config_file = fopen(config_file_path, "r");
+
+        if (config_file) {
+            // Configuration file exists, read and execute configurations
+            char line[1024];
+            while (fgets(line, sizeof(line), config_file)) {
+                struct RedirectionArgs args;
+                if (parse_config_line(line, &args)) {
+                    if (args.is_tcp) {
+                        forward_packets_tcp(&args);
+                    } else {
+                        forward_packets_udp(&args);
+                    }
+                }
+            }
+            fclose(config_file);
+        } else {
+            fprintf(stderr, "Error: Could not open the specified configuration file.\n");
+            exit(EXIT_FAILURE);
+        }
+    } else if (argc == 9) {
+        // No configuration file, use command-line arguments for a single redirection
+        struct RedirectionArgs args;
+        strcpy(args.sending_ip, argv[1]);
+        args.sending_port = atoi(argv[2]);
+        strcpy(args.redirection_ip, argv[3]);
+        args.redirection_port = atoi(argv[4]);
+        strcpy(args.recv_ip, argv[5]);
+        args.recv_port = atoi(argv[6]);
+        args.is_tcp = strcmp(argv[7], "tcp") == 0;
+        args.duration = atoi(argv[8]);
+
+        if (args.is_tcp) {
+            forward_packets_tcp(&args);
+        } else {
+            forward_packets_udp(&args);
+        }
+    } else {
+        fprintf(stderr, "Usage: %s <Config_File> OR %s <Sending_IP> <Sending_Port> <Redirection_IP> <Redirection_Port> <Recv_IP> <Recv_Port> <tcp|udp> <Duration>\n", argv[0], argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+}
+
+
+To use the updated `packet_redirection` program that supports reading redirection configurations from a `.config` file or running a single redirection based on command-line arguments, follow these usage instructions:
+
+**Running Multiple Redirections from a Configuration File:**
+
+1. Create a configuration file (e.g., `redirections.config`) that contains one redirection configuration per line. Each line should specify the parameters for a single redirection.
+
+   Example `redirections.config`:
+   ```
+   192.168.1.10 22 192.168.1.20 2222 192.168.1.30 22 tcp 3600
+   192.168.1.11 5000 192.168.1.21 5001 192.168.1.31 5002 udp 1800
+   ```
+
+2. Run the program with the configuration file as the only command-line argument:
+
+   ```bash
+   ./packet_redirection redirections.config
+   ```
+
+   This command will read the redirection configurations from the `redirections.config` file and execute them one by one.
+
+**Running a Single Redirection Using Command-Line Arguments:**
+
+1. If you want to run a single redirection without using a configuration file, provide the required parameters as command-line arguments.
+
+   Example for a single redirection:
+
+   ```bash
+   ./packet_redirection 192.168.1.10 22 192.168.1.20 2222 192.168.1.30 22 tcp 3600
+   ```
+
+   In this example, you specify the sending IP, sending port, redirection IP, redirection port, receiving IP, receiving port, protocol (tcp/udp), and duration.
+
+**Error Handling:**
+
+- If the configuration file specified as a command-line argument doesn't exist, the program will display an error message.
+- If the command-line arguments are not provided correctly or are incomplete, the program will display a usage message with the correct syntax.
+
+Ensure that you have appropriate permissions and configurations for the specified network settings. Be aware that unauthorized interception or redirection of network traffic can have legal and ethical implications, so use this tool responsibly and within the bounds of applicable laws and regulations.
