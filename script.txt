@@ -2374,3 +2374,282 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
+
+
+/////////////
+
+<Sending_IP>: The IP address the program will listen on for incoming packets.
+<Sending_Port>: The port number the program will listen on for incoming packets.
+<Redirection_IP>: The IP address of the redirection server.
+<Redirection_Port>: The port number of the redirection server.
+<Recv_IP>: The IP address of the final receiving server.
+<Recv_Port>: The port number of the final receiving server.
+<tcp|udp>: Specify tcp for TCP traffic (e.g., SSH) or udp for UDP traffic.
+<Duration>: The duration (in seconds) for which the program should run before 
+
+
+
+
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <time.h>
+
+// Structure to hold the necessary parameters for redirection
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+// Function to handle errors and exit the program
+void error_exit(const char *message) {
+    perror(message);
+    exit(EXIT_FAILURE);
+}
+
+// Function to handle TCP redirection
+void handle_tcp(struct RedirectionArgs *args) {
+    int server_socket, client_socket, redir_socket;
+    struct sockaddr_in server_addr, client_addr, redir_addr;
+    char buffer[2048];
+    fd_set read_fds, temp_fds;
+    int max_fd;
+
+    // Create TCP socket for the server
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        error_exit("Failed to create TCP socket");
+    }
+
+    // Set up the server address structure
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(args->sending_port);
+    inet_pton(AF_INET, args->sending_ip, &server_addr.sin_addr);
+
+    // Bind the server socket to the specified IP and port
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        error_exit("TCP bind failed");
+    }
+
+    // Listen for incoming connections
+    if (listen(server_socket, 5) == -1) {
+        error_exit("TCP listen failed");
+    }
+
+    FD_ZERO(&read_fds);
+    FD_SET(server_socket, &read_fds);
+    max_fd = server_socket;
+
+    time_t start_time = time(NULL);
+
+    // Main loop to handle incoming connections and data redirection
+    while (1) {
+        // Check for the duration to stop the server
+        if (time(NULL) - start_time > args->duration) {
+            break;
+        }
+
+        temp_fds = read_fds;
+        select(max_fd + 1, &temp_fds, NULL, NULL, NULL);
+
+        for (int i = 0; i <= max_fd; i++) {
+            if (FD_ISSET(i, &temp_fds)) {
+                // Handle new connection
+                if (i == server_socket) {
+                    socklen_t client_len = sizeof(client_addr);
+                    client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
+
+                    // Create a socket to connect to the redirection target
+                    redir_socket = socket(AF_INET, SOCK_STREAM, 0);
+                    if (redir_socket == -1) {
+                        error_exit("Failed to create redirection TCP socket");
+                    }
+
+                    // Set up the redirection address structure
+                    memset(&redir_addr, 0, sizeof(redir_addr));
+                    redir_addr.sin_family = AF_INET;
+                    redir_addr.sin_port = htons(args->redirection_port);
+                    inet_pton(AF_INET, args->redirection_ip, &redir_addr.sin_addr);
+
+                    // Connect to the redirection target
+                    if (connect(redir_socket, (struct sockaddr *)&redir_addr, sizeof(redir_addr)) == -1) {
+                        error_exit("Failed to connect to redirection server");
+                    }
+
+                    FD_SET(client_socket, &read_fds);
+                    FD_SET(redir_socket, &read_fds);
+                    
+                    // Update the max_fd if necessary
+                    if (client_socket > max_fd) {
+                        max_fd = client_socket;
+                    }
+                    if (redir_socket > max_fd) {
+                        max_fd = redir_socket;
+                    }
+                } else {
+                    // Handle data transfer between client and redirection target
+                    ssize_t bytes = recv(i, buffer, sizeof(buffer), 0);
+                    if (bytes <= 0) {
+                        // Close the socket if no data or error
+                        close(i);
+                        FD_CLR(i, &read_fds);
+                    } else {
+                        if (i == client_socket) {
+                            send(redir_socket, buffer, bytes, 0);
+                        } else if (i == redir_socket) {
+                            send(client_socket, buffer, bytes, 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Close the server socket
+    close(server_socket);
+}
+
+// Function to handle UDP redirection
+void handle_udp(struct RedirectionArgs *args) {
+    int udp_socket;
+    struct sockaddr_in server_addr, client_addr, redir_addr;
+    char buffer[2048];
+    socklen_t addr_len = sizeof(client_addr);
+
+    // Create UDP socket
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_socket == -1) {
+        error_exit("Failed to create UDP socket");
+    }
+
+    // Set up the server address structure
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(args->sending_port);
+    inet_pton(AF_INET, args->sending_ip, &server_addr.sin_addr);
+
+    // Bind the UDP socket to the specified IP and port
+    if (bind(udp_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        error_exit("UDP bind failed");
+    }
+
+    time_t start_time = time(NULL);
+
+    // Main loop to handle incoming data and redirection
+    while (1) {
+        // Check for the duration to stop the server
+        if (time(NULL) - start_time > args->duration) {
+            break;
+        }
+
+        ssize_t bytes = recvfrom(udp_socket, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
+        if (bytes > 0) {
+            // Set up the redirection address structure
+            memset(&redir_addr, 0, sizeof(redir_addr));
+            redir_addr.sin_family = AF_INET;
+            redir_addr.sin_port = htons(args->redirection_port);
+            inet_pton(AF_INET, args->redirection_ip, &redir_addr.sin_addr);
+
+            // Send the received data to the redirection target
+            sendto(udp_socket, buffer, bytes, 0, (struct sockaddr *)&redir_addr, sizeof(redir_addr));
+        }
+    }
+
+    // Close the UDP socket
+    close(udp_socket);
+}
+
+// Main function
+int main(int argc, char *argv[]) {
+    // Check for the correct number of command-line arguments
+    if (argc != 9) {
+        fprintf(stderr, "Usage: %s <Sending_IP> <Sending_Port> <Redirection_IP> <Redirection_Port> <Recv_IP> <Recv_Port> <tcp|udp> <Duration>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    // Populate the RedirectionArgs structure with command-line arguments
+    struct RedirectionArgs args;
+    strncpy(args.sending_ip, argv[1], sizeof(args.sending_ip));
+    args.sending_port = atoi(argv[2]);
+    strncpy(args.redirection_ip, argv[3], sizeof(args.redirection_ip));
+    args.redirection_port = atoi(argv[4]);
+    strncpy(args.recv_ip, argv[5], sizeof(args.recv_ip));
+    args.recv_port = atoi(argv[6]);
+    args.is_tcp = (strcmp(argv[7], "tcp") == 0) ? 1 : 0;
+    args.duration = atoi(argv[8]);
+
+    // Validate the protocol argument
+    if (!args.is_tcp && strcmp(argv[7], "udp") != 0) {
+        fprintf(stderr, "Invalid protocol specified. Use either 'tcp' or 'udp'.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Call the appropriate handler based on the protocol
+    if (args.is_tcp) {
+        handle_tcp(&args);
+    } else {
+        handle_udp(&args);
+    }
+
+    return 0;
+}
+
+
+
+//////
+
+To use the provided redirection program, you need to:
+
+1. **Compile the program**: 
+   Use a C compiler (like `gcc`) to compile the code.
+
+   ```bash
+   gcc redirector.c -o redirector
+   ```
+
+   This will produce an executable named `redirector` in the same directory.
+
+2. **Run the program**:
+   Once compiled, you can run the program with the required arguments. The program expects 8 arguments in the order:
+
+   ```bash
+   ./redirector <Sending_IP> <Sending_Port> <Redirection_IP> <Redirection_Port> <Recv_IP> <Recv_Port> <tcp|udp> <Duration>
+   ```
+
+   - **Sending_IP**: IP where this program will listen.
+   - **Sending_Port**: Port where this program will listen.
+   - **Redirection_IP**: IP where the data should be forwarded.
+   - **Redirection_Port**: Port where the data should be forwarded.
+   - **Recv_IP**: (This value isn't used in the provided code. You can provide any valid IP here or modify the program to make use of it if required.)
+   - **Recv_Port**: (This value isn't used in the provided code. You can provide any valid port here or modify the program to make use of it if required.)
+   - **tcp|udp**: Specify the protocol you want to use. You can either use 'tcp' or 'udp'.
+   - **Duration**: The duration (in seconds) for which the redirection should work.
+
+   Example:
+
+   ```bash
+   ./redirector 127.0.0.1 8080 192.168.1.100 9090 127.0.0.1 7000 tcp 60
+   ```
+
+   This will start the program, and it will listen on IP `127.0.0.1` and port `8080` for incoming TCP connections. When it receives data, it will forward that data to `192.168.1.100` on port `9090`. The program will run for 60 seconds.
+
+3. **Stopping the program**:
+   If you want to stop the program before the specified duration, you can do so by pressing `Ctrl+C` in the terminal where the program is running.
+
+Remember, this is a basic redirection program and might not cover all edge cases or provide features like error handling in-depth, logging, or robustness that a production-level redirector might offer. It's a good starting point for understanding the concept and can be expanded upon as needed.
