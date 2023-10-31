@@ -2653,3 +2653,28 @@ To use the provided redirection program, you need to:
    If you want to stop the program before the specified duration, you can do so by pressing `Ctrl+C` in the terminal where the program is running.
 
 Remember, this is a basic redirection program and might not cover all edge cases or provide features like error handling in-depth, logging, or robustness that a production-level redirector might offer. It's a good starting point for understanding the concept and can be expanded upon as needed.
+
+
+
+
+In the given packet redirection program, "Server A" represents the initial sending server from which packets originate, and you want to redirect them through "Server B" (the redirection server) to "Server C" (the final receiving server). The provided program is written to run on Server B (the redirection server). 
+
+For Server A, you don't specifically provide any arguments in the context of this program. Instead, Server A simply sends its packets to Server B's listening IP and port. 
+
+To clarify:
+
+1. **Server A** (Sending Server):
+   - Will have applications or services that send packets.
+   - Should direct its outgoing packets to Server B's listening address (`<Sending_IP>:<Sending_Port>`).
+   - There's no specific requirement mentioned for this server in the context of the provided program, so you just ensure any application or service on Server A sends data to Server B's listening address.
+
+2. **Server B** (Redirection Server, where the provided program runs):
+   - Listens on `<Sending_IP>:<Sending_Port>`.
+   - Forwards incoming packets to `<Redirection_IP>:<Redirection_Port>`, which should typically be an address on Server C.
+   - In this context, Server B takes the arguments as mentioned in the program.
+
+3. **Server C** (Receiving Server):
+   - Should be prepared to receive packets from Server B at `<Recv_IP>:<Recv_Port>`.
+   - There's no specific requirement mentioned for this server in the context of the provided program.
+
+So, to answer your question: You don't provide arguments to Server A in the context of this program. Instead, you configure any applications or services on Server A to send their packets to the listening address of Server B.
