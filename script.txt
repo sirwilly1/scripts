@@ -2942,4 +2942,192 @@ int main(int argc, char *argv[]) {
     return 0;
 }
  
- 
+
+
+
+
+
+
+
+
+
+ ////////////
+ void handle_tcp(struct RedirectionArgs *args) {
+    // Declare server, client, and redirection socket descriptors.
+    int server_socket, client_socket, redir_socket;
+
+    // Declare structures for the server, client, and redirection addresses.
+    struct sockaddr_in server_addr, client_addr, redir_addr;
+
+    // Buffer to temporarily store received data.
+    char buffer[2048];
+
+    // Set of socket descriptors to monitor for readability.
+    fd_set read_fds, temp_fds;
+    int max_fd;
+
+    // Create a socket for the server.
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        error_exit("Failed to create TCP socket"); // Exit if socket creation fails.
+    }
+
+    // Initialize the server address structure to zero.
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET; // Specify the address family (IPv4).
+    server_addr.sin_port = htons(args->sending_port); // Set the port number.
+    inet_pton(AF_INET, args->sending_ip, &server_addr.sin_addr); // Convert IP address from string to binary form.
+
+    // Bind the server socket to the desired IP and port.
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        error_exit("TCP bind failed"); // Exit if bind fails.
+    }
+
+    // Put the server socket into listen mode.
+    if (listen(server_socket, 5) == -1) {
+        error_exit("TCP listen failed"); // Exit if listen fails.
+    }
+
+    // Initialize the file descriptor set.
+    FD_ZERO(&read_fds);
+    FD_SET(server_socket, &read_fds); // Add the server socket to the set.
+    max_fd = server_socket; // Initially, the server socket has the highest descriptor number.
+
+    // Record the start time for the duration check.
+    time_t start_time = time(NULL);
+
+    // Main loop to handle incoming connections and data forwarding.
+    while (1) {
+        // Break the loop after the specified duration.
+        if (time(NULL) - start_time > args->duration) {
+            break;
+        }
+
+        // Make a copy of the read_fds set since select alters the set.
+        temp_fds = read_fds;
+
+        // Wait until there's an activity on any of the sockets.
+        select(max_fd + 1, &temp_fds, NULL, NULL, NULL);
+
+        // Check every socket for activity.
+        for (int i = 0; i <= max_fd; i++) {
+            if (FD_ISSET(i, &temp_fds)) {
+                // If the activity is on the server socket, it's an incoming connection.
+                if (i == server_socket) {
+                    socklen_t client_len = sizeof(client_addr);
+
+                    // Accept the incoming connection.
+                    client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
+
+                    // Create a new socket to connect to the redirection server.
+                    redir_socket = socket(AF_INET, SOCK_STREAM, 0);
+                    if (redir_socket == -1) {
+                        error_exit("Failed to create redirection TCP socket");
+                    }
+
+                    // Initialize the redirection server address.
+                    memset(&redir_addr, 0, sizeof(redir_addr));
+                    redir_addr.sin_family = AF_INET;
+                    redir_addr.sin_port = htons(args->redirection_port);
+                    inet_pton(AF_INET, args->redirection_ip, &redir_addr.sin_addr);
+
+                    // Connect to the redirection server.
+                    if (connect(redir_socket, (struct sockaddr *)&redir_addr, sizeof(redir_addr)) == -1) {
+                        error_exit("Failed to connect to redirection server");
+                    }
+
+                    // Add the new sockets to the set of descriptors to monitor.
+                    FD_SET(client_socket, &read_fds);
+                    FD_SET(redir_socket, &read_fds);
+
+                    // Update the max_fd if necessary.
+                    if (client_socket > max_fd) {
+                        max_fd = client_socket;
+                    }
+                    if (redir_socket > max_fd) {
+                        max_fd = redir_socket;
+                    }
+                } else {
+                    // If the activity is not on the server socket, it's data transfer.
+                    ssize_t bytes = recv(i, buffer, sizeof(buffer), 0);
+                    if (bytes <= 0) {
+                        // If recv returns <= 0, the socket is closed or there's an error.
+                        close(i);
+                        FD_CLR(i, &read_fds); // Remove the socket from the set.
+                    } else {
+                        // Forward the received data.
+                        if (i == client_socket) {
+                            send(redir_socket, buffer, bytes, 0); // From client to redirection server.
+                        } else if (i == redir_socket) {
+                            send(client_socket, buffer, bytes, 0); // From redirection server to client.
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Close the server socket at the end.
+    close(server_socket);
+}
+
+
+
+
+void handle_udp(struct RedirectionArgs *args) {
+    // Declare a socket descriptor for UDP communication.
+    int udp_socket;
+
+    // Declare structures for the server, client, and redirection addresses.
+    struct sockaddr_in server_addr, client_addr, redir_addr;
+
+    // Buffer to temporarily store received data.
+    char buffer[2048];
+
+    // Declare a variable for the length of the client address. This will be modified by recvfrom().
+    socklen_t addr_len = sizeof(client_addr);
+
+    // Create a socket for the server.
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_socket == -1) {
+        error_exit("Failed to create UDP socket"); // Exit if socket creation fails.
+    }
+
+    // Initialize the server address structure to zero.
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET; // Specify the address family (IPv4).
+    server_addr.sin_port = htons(args->sending_port); // Set the port number.
+    inet_pton(AF_INET, args->sending_ip, &server_addr.sin_addr); // Convert IP address from string to binary form.
+
+    // Bind the server socket to the desired IP and port.
+    if (bind(udp_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+        error_exit("UDP bind failed"); // Exit if bind fails.
+    }
+
+    // Record the start time for the duration check.
+    time_t start_time = time(NULL);
+
+    // Main loop to handle incoming packets and data forwarding.
+    while (1) {
+        // Break the loop after the specified duration.
+        if (time(NULL) - start_time > args->duration) {
+            break;
+        }
+
+        // Receive data from a client. 
+        ssize_t bytes = recvfrom(udp_socket, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
+        if (bytes > 0) {
+            // If data is successfully received, prepare the redirection address.
+            memset(&redir_addr, 0, sizeof(redir_addr));
+            redir_addr.sin_family = AF_INET;
+            redir_addr.sin_port = htons(args->redirection_port);
+            inet_pton(AF_INET, args->redirection_ip, &redir_addr.sin_addr);
+
+            // Send the received data to the redirection address.
+            sendto(udp_socket, buffer, bytes, 0, (struct sockaddr *)&redir_addr, sizeof(redir_addr));
+        }
+    }
+
+    // Close the UDP socket at the end.
+    close(udp_socket);
+}
