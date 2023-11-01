@@ -2678,3 +2678,45 @@ To clarify:
    - There's no specific requirement mentioned for this server in the context of the provided program.
 
 So, to answer your question: You don't provide arguments to Server A in the context of this program. Instead, you configure any applications or services on Server A to send their packets to the listening address of Server B.
+
+
+
+///////
+To test the packet redirection program with SSH, you can set up a scenario with three machines:
+
+1. **Server A**: The initial machine you SSH from.
+2. **Server B**: The redirection server where the provided program runs.
+3. **Server C**: The final target machine you want to SSH into.
+
+Here's a step-by-step process to test the redirection:
+
+1. **Prepare Server C**:
+   - Ensure SSH server is installed and running.
+     - For Debian/Ubuntu: `sudo apt-get install openssh-server`
+     - For RedHat/CentOS: `sudo yum install openssh-server`
+   - Start the SSH service:
+     ```bash
+     sudo service ssh start
+     ```
+
+2. **Prepare Server B**:
+   - Compile and run the provided redirection program with appropriate arguments.
+     For instance, if you want to redirect TCP packets from Server B's IP `192.168.1.2` on port `8080` to Server C's IP `192.168.1.3` on its SSH port `22`, you would run:
+     ```bash
+     gcc packet_redirect.c -o redirect
+     ./redirect 192.168.1.2 8080 192.168.1.3 22 192.168.1.3 22 tcp 3600
+     ```
+   - This will start the program and it will listen for incoming SSH connections on `192.168.1.2:8080` and redirect them to `192.168.1.3:22`.
+
+3. **SSH from Server A**:
+   - SSH into Server B's listening port which will then redirect the SSH request to Server C:
+     ```bash
+     ssh -p 8080 username@192.168.1.2
+     ```
+   - Here, `username` is the SSH user on Server C. After entering the password, you should be logged into Server C even though you SSH'ed into Server B's address and port. This indicates the redirection is working.
+
+4. **Monitoring**:
+   - On Server B, you should be able to see the incoming and outgoing packets (if you've added print statements or logging in the redirection program).
+   - On Server C, you can check the SSH logs (typically in `/var/log/auth.log` on Ubuntu) to see the incoming SSH connection.
+
+Note: For real-world scenarios, ensure your redirection setup is in line with network and security policies. This setup is simplified for testing purposes. SSH can be sensitive to packet delays or losses, so the redirection should be as efficient and reliable as possible to avoid disrupting the SSH session.
