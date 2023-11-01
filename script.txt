@@ -2720,3 +2720,224 @@ Here's a step-by-step process to test the redirection:
    - On Server C, you can check the SSH logs (typically in `/var/log/auth.log` on Ubuntu) to see the incoming SSH connection.
 
 Note: For real-world scenarios, ensure your redirection setup is in line with network and security policies. This setup is simplified for testing purposes. SSH can be sensitive to packet delays or losses, so the redirection should be as efficient and reliable as possible to avoid disrupting the SSH session.
+
+
+
+///////
+Certainly! I'll provide a solution that will read multiple redirection configurations from an INI file and process them serially. If an INI file is provided, the program will use that; otherwise, it will use the command-line arguments.
+
+Here's how it will be structured:
+
+### INI File Structure:
+Each redirection will be placed in a separate section. Each section will be named `redirectionX` where `X` is a number.
+```ini
+[redirection1]
+sending_ip = 192.168.1.1
+sending_port = 8080
+redirection_ip = 192.168.1.2
+redirection_port = 8081
+recv_ip = 192.168.1.3
+recv_port = 22
+protocol = tcp
+duration = 3600
+
+[redirection2]
+sending_ip = 192.168.1.4
+sending_port = 8082
+redirection_ip = 192.168.1.5
+redirection_port = 8083
+recv_ip = 192.168.1.6
+recv_port = 23
+protocol = udp
+duration = 1800
+```
+
+### Code Changes:
+
+1. Expand the configuration structure to hold an array of redirection configurations:
+```c
+#define MAX_REDIRECTIONS 10
+
+typedef struct {
+    struct RedirectionArgs redirections[MAX_REDIRECTIONS];
+    int count;
+} Configuration;
+```
+
+2. Modify the INI handler to populate redirection configurations:
+```c
+static int handler(void* user, const char* section, const char* name, const char* value) {
+    Configuration* config = (Configuration*)user;
+    int index = atoi(&section[strlen("redirection")]) - 1;
+    
+    if (index < 0 || index >= MAX_REDIRECTIONS) {
+        return 0;  // Invalid section number
+    }
+
+    struct RedirectionArgs *args = &config->redirections[index];
+    config->count = index + 1; // Update count
+
+    #define MATCH(n) strcmp(name, n) == 0
+    if (MATCH("sending_ip")) {
+        strncpy(args->sending_ip, value, sizeof(args->sending_ip));
+    } else if (MATCH("sending_port")) {
+        args->sending_port = atoi(value);
+    } else if (MATCH("redirection_ip")) {
+        strncpy(args->redirection_ip, value, sizeof(args->redirection_ip));
+    } else if (MATCH("redirection_port")) {
+        args->redirection_port = atoi(value);
+    } else if (MATCH("recv_ip")) {
+        strncpy(args->recv_ip, value, sizeof(args->recv_ip));
+    } else if (MATCH("recv_port")) {
+        args->recv_port = atoi(value);
+    } else if (MATCH("protocol")) {
+        args->is_tcp = strcmp(value, "tcp") == 0 ? 1 : 0;
+    } else if (MATCH("duration")) {
+        args->duration = atoi(value);
+    } else {
+        return 0;  /* unknown name, error */
+    }
+    return 1;
+}
+```
+
+3. Modify `main()` to either use command-line args or process redirections from the INI file:
+```c
+int main(int argc, char *argv[]) {
+    if (argc == 2) {
+        Configuration config = { .count = 0 };
+        if (ini_parse(argv[1], handler, &config) < 0) {
+            printf("Can't load '%s'\n", argv[1]);
+            return 1;
+        }
+
+        for (int i = 0; i < config.count; i++) {
+            struct RedirectionArgs *args = &config.redirections[i];
+            if (args->is_tcp) {
+                handle_tcp(args);
+            } else {
+                handle_udp(args);
+            }
+        }
+    } else if (argc == 9) {
+        // ... The existing argument parsing code ...
+    } else {
+        fprintf(stderr, "Usage: %s <config.ini> OR the usual arguments\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+}
+```
+
+With these modifications, if an INI file is provided, the program will read multiple redirection configurations and execute them in sequence. If command-line arguments are provided, it will operate on just that single redirection.
+
+////////////
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <time.h>
+
+#define MAX_REDIRECTIONS 10
+
+struct RedirectionArgs {
+    char sending_ip[16];
+    int sending_port;
+    char redirection_ip[16];
+    int redirection_port;
+    char recv_ip[16];
+    int recv_port;
+    int is_tcp;
+    int duration;
+};
+
+typedef struct {
+    struct RedirectionArgs redirections[MAX_REDIRECTIONS];
+    int count;
+} Configuration;
+
+void error_exit(const char *message) {
+    perror(message);
+    exit(EXIT_FAILURE);
+}
+
+// ... handle_tcp and handle_udp functions ...
+
+int parse_ini(const char *filename, Configuration *config) {
+    FILE *file = fopen(filename, "r");
+    if (!file) return 0;
+
+    char line[256];
+    struct RedirectionArgs *current = NULL;
+
+    while (fgets(line, sizeof(line), file)) {
+        // Remove newline character
+        line[strcspn(line, "\n")] = 0;
+
+        // Check for redirection section
+        if (strncmp(line, "[redirection", 12) == 0) {
+            int index = atoi(line + 12) - 1;
+            if (index >= 0 && index < MAX_REDIRECTIONS) {
+                current = &config->redirections[index];
+                config->count = index + 1;
+            } else {
+                current = NULL;
+            }
+        } else if (current && strchr(line, '=')) {
+            char *key = strtok(line, "=");
+            char *value = strtok(NULL, "=");
+
+            if (strcmp(key, "sending_ip") == 0) {
+                strncpy(current->sending_ip, value, sizeof(current->sending_ip));
+            } else if (strcmp(key, "sending_port") == 0) {
+                current->sending_port = atoi(value);
+            } else if (strcmp(key, "redirection_ip") == 0) {
+                strncpy(current->redirection_ip, value, sizeof(current->redirection_ip));
+            } else if (strcmp(key, "redirection_port") == 0) {
+                current->redirection_port = atoi(value);
+            } else if (strcmp(key, "recv_ip") == 0) {
+                strncpy(current->recv_ip, value, sizeof(current->recv_ip));
+            } else if (strcmp(key, "recv_port") == 0) {
+                current->recv_port = atoi(value);
+            } else if (strcmp(key, "protocol") == 0) {
+                current->is_tcp = strcmp(value, "tcp") == 0 ? 1 : 0;
+            } else if (strcmp(key, "duration") == 0) {
+                current->duration = atoi(value);
+            }
+        }
+    }
+
+    fclose(file);
+    return 1;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc == 2) {
+        Configuration config = { .count = 0 };
+        if (!parse_ini(argv[1], &config)) {
+            printf("Failed to load '%s'\n", argv[1]);
+            return 1;
+        }
+
+        for (int i = 0; i < config.count; i++) {
+            struct RedirectionArgs *args = &config.redirections[i];
+            if (args->is_tcp) {
+                handle_tcp(args);
+            } else {
+                handle_udp(args);
+            }
+        }
+    } else if (argc == 9) {
+        // ... Existing argument parsing code ...
+    } else {
+        fprintf(stderr, "Usage: %s <config.ini> OR the usual arguments\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    return 0;
+}
