@@ -29,3 +29,104 @@ tftp> get testfile.txt
 Replace `<Server_B_IP>` with the IP address of Server B and `<Redirection_Program_Port>` with the port where your redirection program is listening.
 
 During the test, you should monitor the output of the redirection program for any errors or indications of the packets being received and forwarded. Additionally, you can use network sniffing tools like `tcpdump` or `Wireshark` to observe the traffic and ensure that it's being directed correctly from the client to Server B, then to Server C, and back along the same path.
+
+
+
+
+-—----------------
+To test packet redirection for a Trivial File Transfer Protocol (TFTP) service using your redirection server, you'll need to set up TFTP services on the final server (Server C) and then use a TFTP client on the initial server (Server A) to request files. Server B will be running your redirection program.
+
+Here's a step-by-step guide:
+
+1. **Set Up TFTP Server (Server C):**
+   - Install a TFTP server on Server C.
+   - Configure the TFTP server, ensuring the service is running and that you have a file available for retrieval in the TFTP root directory.
+
+2. **Set Up Redirection Server (Server B):**
+   - Compile and run the packet redirection program on Server B.
+   - Configure it to listen for UDP packets (TFTP uses UDP) on the TFTP port (default 69) and redirect them to the IP and port of Server C's TFTP service.
+
+3. **Test Redirection Using TFTP Client (Server A):**
+   - Install a TFTP client on Server A.
+   - Use the TFTP client to request a file from Server B's IP address (the redirection server).
+   - Use the command `tftp <Server_B_IP> GET <filename>` where `<filename>` is the name of the file you've placed in the TFTP root directory on Server C.
+
+4. **Conduct the Test:**
+   - Execute the TFTP command from Server A.
+   - If the redirection is working, the TFTP client will show a successful transfer, and the file will be downloaded to Server A.
+
+During the test, ensure you're running the redirection server program with the appropriate flags to handle UDP traffic and set for the correct duration to complete the TFTP transaction.
+
+Note: TFTP uses port 69 for the initial connection, but subsequent data transfers occur on different ports. Your packet redirection program must handle these port changes. It might require extra logic to manage the TFTP transfer mode effectively.
+
+You can also monitor the traffic using network tools like `tcpdump` to ensure the TFTP requests are being sent to and received from the correct servers. Here is a sample `tcpdump` command to monitor TFTP traffic:
+
+```bash
+tcpdump -i any udp port 69
+```
+
+This command will show you TFTP packets on all network interfaces for UDP port 69, which can help verify that your redirection server is receiving and forwarding the TFTP requests correctly.
+
+-------------
+Setting up a TFTP server on Server C (your target server) involves a few steps:
+
+1. **Install TFTP Server:**
+   Depending on your operating system, the TFTP server installation will vary. For example, on a Ubuntu Linux system, you can install the TFTP server with:
+
+   ```bash
+   sudo apt update
+   sudo apt install tftpd-hpa
+   ```
+
+2. **Configure TFTP Server:**
+   You need to configure the TFTP server. For `tftpd-hpa`, the configuration file is typically located at `/etc/default/tftpd-hpa`. Edit the file to set the TFTP server options, such as the TFTP directory, address, and port.
+
+   Example configuration changes in `/etc/default/tftpd-hpa`:
+   ```bash
+   TFTP_USERNAME="tftp"
+   TFTP_DIRECTORY="/var/lib/tftpboot"
+   TFTP_ADDRESS=":69"
+   TFTP_OPTIONS="--secure"
+   ```
+
+   The `--secure` option sets the root directory for files, and no files outside of this directory will be accessible.
+
+3. **Create TFTP Directory and Set Permissions:**
+   Create the directory specified in the TFTP configuration if it doesn't exist, and set the correct permissions:
+
+   ```bash
+   sudo mkdir -p /var/lib/tftpboot
+   sudo chown tftp:tftp /var/lib/tftpboot
+   sudo chmod -R 777 /var/lib/tftpboot
+   ```
+
+4. **Place Files in TFTP Root:**
+   Any files you want to be accessible through TFTP should be placed in the TFTP root directory (`/var/lib/tftpboot` in this example).
+
+   ```bash
+   sudo cp /path/to/your/file /var/lib/tftpboot/
+   ```
+
+5. **Restart TFTP Service:**
+   Restart the TFTP service to apply the changes:
+
+   ```bash
+   sudo systemctl restart tftpd-hpa
+   ```
+
+6. **Allow TFTP Through the Firewall:**
+   If you have a firewall, you need to allow traffic on the TFTP port (default is 69):
+
+   ```bash
+   sudo ufw allow 69/udp
+   ```
+
+7. **Test TFTP Server Locally:**
+   Before using the redirection server, test the TFTP server locally to make sure it's working:
+
+   ```bash
+   tftp localhost
+   tftp> get your_file
+   ```
+
+If the local test is successful, your TFTP server is ready to receive redirected TFTP requests from Server B (the redirection server).
