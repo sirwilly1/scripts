@@ -1,0 +1,51 @@
+Testing UDP redirection can be approached through several different methods, beyond TFTP or iPerf. Here are some ways you might consider:
+
+1. **nc (Netcat) with UDP:**
+   You can use Netcat to listen for UDP packets on Server C and send UDP packets from Server A, going through the redirection server B. On Server C, listen on a specific port:
+
+   ```sh
+   nc -u -l -p <Recv_Port>
+   ```
+
+   On Server A, send a message to Server B’s redirection IP and port:
+
+   ```sh
+   echo "Test message" | nc -u <Redirection_IP> <Redirection_Port>
+   ```
+
+   If redirection is working, the message should appear on Server C.
+
+2. **Custom UDP Echo Server and Client:**
+   Write a simple UDP echo server that listens for incoming UDP packets and responds back with the same packet. Then, use a UDP client to send packets to the redirection server and wait for the echo response.
+
+3. **DNS Query:**
+   Use `dig` or `nslookup` to send a DNS query to a known DNS server through your redirection server. This is a practical real-world UDP test.
+
+   Example using `dig`:
+   ```sh
+   dig @<Redirection_IP> -p <Redirection_Port> example.com
+   ```
+
+   If redirection is working correctly, you should receive a DNS response from the target DNS server.
+
+4. **SNMP (Simple Network Management Protocol):**
+   If SNMP is available on Server C, you can use an SNMP client to send a request to the redirection server, which should pass it on to Server C.
+
+   Example SNMP walk using `snmpwalk`:
+   ```sh
+   snmpwalk -v2c -c public <Redirection_IP>:<Redirection_Port> system
+   ```
+
+5. **Syslog Messages:**
+   UDP is often used for syslog messages. Configure a syslog client to send logs to your redirection server's IP and port. Server C should be set up with a syslog server that can receive and log these messages.
+
+6. **VoIP Protocols:**
+   If you have access to VoIP devices or software that use SIP or RTP (which operate over UDP), you can make a call from one endpoint to another through the redirection server.
+
+7. **Game Server Queries:**
+   Some multiplayer games use UDP for server queries. You could use a game server query tool to send a query to your redirection server and see if the response comes back.
+
+8. **Video/Audio Streaming:**
+   Set up a streaming server on Server C and use a client to connect to the stream through the redirection server B.
+
+Remember, when testing, to monitor the logs or use packet sniffing tools like `tcpdump` or `Wireshark` on the redirection server to verify that packets are being redirected as expected.
