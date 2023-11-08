@@ -1,0 +1,55 @@
+To print out the bytes being redirected in the TCP and UDP redirect functions, you can simply add a print statement within the loop where the data is received and sent. Below, I will modify both `handle_tcp` and `handle_udp` functions to include print statements that output the number of bytes being handled.
+
+For the `handle_tcp` function:
+```c
+// ... [rest of the code]
+
+while (1) {
+    // ... [rest of the code within the loop]
+    if (FD_ISSET(i, &temp_fds)) {
+        if (i == server_socket) {
+            // ... [accepting new connection code]
+        } else {
+            // Data transfer: handle incoming data and redirection
+            ssize_t bytes = recv(i, buffer, sizeof(buffer), 0);
+            if (bytes <= 0) {
+                close(i);
+                FD_CLR(i, &read_fds);
+            } else {
+                // Print the number of bytes received
+                printf("TCP Redirect: Received %zd bytes\n", bytes);
+                if (i == client_socket) {
+                    send(redir_socket, buffer, bytes, 0);
+                } else if (i == redir_socket) {
+                    send(client_socket, buffer, bytes, 0);
+                }
+                // Print the number of bytes sent
+                printf("TCP Redirect: Sent %zd bytes\n", bytes);
+            }
+        }
+    }
+}
+
+// ... [rest of the code]
+```
+
+For the `handle_udp` function:
+```c
+// ... [rest of the code]
+
+while (1) {
+    // ... [rest of the code within the loop]
+    ssize_t bytes = recvfrom(udp_socket, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
+    if (bytes > 0) {
+        // Print the number of bytes received
+        printf("UDP Redirect: Received %zd bytes\n", bytes);
+        sendto(udp_socket, buffer, bytes, 0, (struct sockaddr *)&redir_addr, sizeof(redir_addr));
+        // Print the number of bytes sent
+        printf("UDP Redirect: Sent %zd bytes\n", bytes);
+    }
+}
+
+// ... [rest of the code]
+```
+
+By adding these `printf` statements, you'll be able to see the count of bytes that are being received and then sent on by your redirection server. Make sure the standard output is not redirected or buffered, or you may not see the prints immediately, especially with TCP, which can have a lot of back-and-forth packets. In a production environment, you would likely want to log this information to a file or a logging service rather than printing to the console.
