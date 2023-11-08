@@ -1,0 +1,31 @@
+To test the UDP packet redirection using TFTP (Trivial File Transfer Protocol), you would need to set up a TFTP server (Server C), a TFTP client, and the redirection server (Server B which is running the packet redirection program). Here’s how you could test it:
+
+1. **Set Up a TFTP Server (Server C):**
+   - Install a TFTP server on Server C.
+   - Configure it to listen on the standard TFTP port (UDP 69) or another port of your choosing.
+   - Place a test file in the server's root directory that you can try to retrieve.
+
+2. **Set Up Redirection Server (Server B):**
+   - Compile and run the packet redirection program on Server B.
+   - Configure the redirection program to listen for UDP packets on a specific port (this will be the port the TFTP client will target).
+   - Set the redirection target to the IP and port of the TFTP server.
+
+3. **Set Up a TFTP Client:**
+   - Use a TFTP client on your local machine (Server A) or another separate machine.
+   - Configure the client to request files from Server B’s IP address and the port where the redirection program is listening.
+
+4. **Test the File Transfer:**
+   - Initiate a file transfer using the TFTP client. For example, you can try to get the test file you placed on the TFTP server.
+   - The request should go to Server B, which will then redirect it to Server C.
+   - The TFTP server should respond back to Server B, which in turn should forward the response back to the TFTP client.
+
+Here is an example command you might use on the TFTP client if you are using the `tftp` command-line tool:
+
+```bash
+tftp <Server_B_IP> <Redirection_Program_Port>
+tftp> get testfile.txt
+```
+
+Replace `<Server_B_IP>` with the IP address of Server B and `<Redirection_Program_Port>` with the port where your redirection program is listening.
+
+During the test, you should monitor the output of the redirection program for any errors or indications of the packets being received and forwarded. Additionally, you can use network sniffing tools like `tcpdump` or `Wireshark` to observe the traffic and ensure that it's being directed correctly from the client to Server B, then to Server C, and back along the same path.
