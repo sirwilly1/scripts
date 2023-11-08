@@ -1,0 +1,41 @@
+Testing packet redirection using `iperf` would involve measuring the bandwidth between the client and the server through the redirection server. You would need to set up `iperf` in server mode on Server C (the final receiving server) and in client mode on Server A (the initial sending server), with Server B acting as the redirection server running the redirection program.
+
+Here's how to do it step-by-step:
+
+1. **Set Up `iperf` Server (Server C):**
+   - Install `iperf` on Server C.
+   - Start `iperf` in server mode by running `iperf -s` for TCP or `iperf -s -u` for UDP.
+
+2. **Set Up Redirection Server (Server B):**
+   - Compile and run the packet redirection program on Server B.
+   - Configure it to listen for TCP or UDP (depending on your test) packets on a specific port and redirect them to Server C’s IP address and the `iperf` port.
+
+3. **Set Up `iperf` Client (Server A):**
+   - Install `iperf` on Server A.
+   - Run `iperf` in client mode targeting Server B's IP address and the port where the redirection program is listening. Use `iperf -c <Server_B_IP> -p <Redirection_Program_Port>` for TCP or add the `-u` flag for UDP.
+
+4. **Conduct the Test:**
+   - Execute the `iperf` test from Server A.
+   - Observe the output on Server A for client-side results and on Server C for server-side results.
+
+Here's an example command to use `iperf` in UDP mode (since the packet redirection program supports both TCP and UDP, and `iperf` has options for both):
+
+For UDP test:
+
+```bash
+iperf -c <Server_B_IP> -p <Redirection_Program_Port> -u
+```
+
+For TCP test:
+
+```bash
+iperf -c <Server_B_IP> -p <Redirection_Program_Port>
+```
+
+Replace `<Server_B_IP>` with the IP address of Server B and `<Redirection_Program_Port>` with the port where your redirection program is listening.
+
+While the test is running, the redirection program should handle the incoming `iperf` traffic from Server A and redirect it to Server C, then take the responses from Server C and send them back to Server A. This will test the bandwidth through the redirection setup.
+
+You would measure the success of the redirection by comparing the bandwidth results reported by `iperf` on Server A with the expected bandwidth to Server C when connected directly. If the redirection is working correctly, the `iperf` results should be similar, minus some overhead introduced by the redirection process.
+
+During the test, you can also monitor the packet flow using network tools like `tcpdump` or `Wireshark` to ensure the traffic is being properly redirected.
