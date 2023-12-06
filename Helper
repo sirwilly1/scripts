@@ -48,3 +48,18 @@ python copy_script.py 3
 ```
 
 This example will create three copies of each specified file with names like `test1.txt`, `test2.txt`, and `test3.txt`. Adjust the `file_paths` list with the desired file paths.
+
+
+
+
+import subprocess
+
+def launch_terminator_with_panes():
+    try:
+        subprocess.run(['terminator', '--layout', '4'])
+    except FileNotFoundError:
+        print("Terminator not found. Make sure it's installed on your system.")
+
+# Call the function to launch Terminator with four panes
+launch_terminator_with_panes()
+
