@@ -10,3 +10,31 @@ int main() {
 
     return 0;
 }
+
+
+
+#include <stdio.h>
+
+// Define a sample struct
+struct SampleStruct {
+    int value;
+};
+
+// Define another struct
+struct AnotherStruct {
+    double data;
+};
+
+int main() {
+    // Create an instance of the SampleStruct
+    struct SampleStruct myStruct;
+    myStruct.value = 42;
+
+    // Typecast the struct to AnotherStruct
+    struct AnotherStruct anotherStruct = *((struct AnotherStruct*)&myStruct);
+
+    // Access the data in the new struct
+    printf("Value in AnotherStruct: %lf\n", anotherStruct.data);
+
+    return 0;
+}
