@@ -38,3 +38,32 @@ int main() {
 
     return 0;
 }
+
+
+
+
+
+#include <stdio.h>
+
+// Define a sample struct
+struct SampleStruct {
+    int value;
+};
+
+int main() {
+    // Create an instance of SampleStruct
+    struct SampleStruct myStruct;
+    myStruct.value = 42;
+
+    // Typecast the struct pointer to an int pointer
+    int *intValuePtr = (int*)&myStruct;
+
+    // Access the int value using the new pointer
+    int intValue = *intValuePtr;
+
+    // Print the result
+    printf("Value as int: %d\n", intValue);
+
+    return 0;
+}
+
