@@ -1,0 +1,60 @@
+Certainly! Here are 10 examples of using `perf` to analyze various programs and tasks on Linux:
+
+1. **Analyze a Process by PID:**
+   ```bash
+   perf record -o perf.data -p <PID>
+   perf report -i perf.data
+   ```
+
+2. **Profile CPU Usage of a Command:**
+   ```bash
+   perf stat <your-command>
+   ```
+
+3. **Top Functions Consuming CPU Time:**
+   ```bash
+   perf top
+   ```
+
+4. **Record System-wide Events:**
+   ```bash
+   perf record -a -g -o perf.data sleep 10
+   perf report -i perf.data
+   ```
+
+5. **Profile Specific Event:**
+   ```bash
+   perf record -e cpu-cycles -o perf.data <your-command>
+   perf report -i perf.data
+   ```
+
+6. **Profile Kernel Function Calls:**
+   ```bash
+   perf record -e cycles:k -a
+   perf report
+   ```
+
+7. **Monitor Context Switches:**
+   ```bash
+   perf record -e context-switches -a
+   perf report
+   ```
+
+8. **Profile Memory Events:**
+   ```bash
+   perf record -e cache-misses -o perf.data <your-command>
+   perf report -i perf.data
+   ```
+
+9. **Profile Disk I/O:**
+   ```bash
+   perf record -e block:block_rq_issue -a
+   perf report
+   ```
+
+10. **Trace System Calls:**
+    ```bash
+    perf trace -e syscalls:sys_enter_<syscall_name> <your-command>
+    ```
+
+Remember to customize these examples based on your specific use case, and explore additional `perf` options to tailor your analysis. The key is to choose the right events and focus on the aspects of performance that matter to your investigation.
