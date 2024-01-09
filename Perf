@@ -58,3 +58,64 @@ Certainly! Here are 10 examples of using `perf` to analyze various programs and 
     ```
 
 Remember to customize these examples based on your specific use case, and explore additional `perf` options to tailor your analysis. The key is to choose the right events and focus on the aspects of performance that matter to your investigation.
+
+
+
+
+
+To monitor a program you wrote using `perf`, follow these steps:
+
+1. **Compile with Debug Symbols:**
+   Ensure your program is compiled with debug symbols to get meaningful function names in the analysis. Use the `-g` flag with your compiler (e.g., `gcc -g your_program.c -o your_program`).
+
+2. **Run Your Program with perf:**
+   Run your program with `perf` by specifying the `record` subcommand:
+   ```bash
+   perf record -o perf.data ./your_program
+   ```
+
+3. **Stop Recording:**
+   After your program finishes running, stop the recording:
+   ```bash
+   perf report -i perf.data
+   ```
+
+4. **Analyze the Report:**
+   The `perf report` command will display a summary of the performance profile, showing CPU usage, function call traces, and more.
+
+5. **Customize Events (Optional):**
+   You can customize the events you want to monitor. For example, to profile cache-misses, you can use:
+   ```bash
+   perf record -e cache-misses -o perf.data ./your_program
+   ```
+
+6. **Explore Other perf Commands:**
+   Use other `perf` commands like `perf stat`, `perf top`, or `perf trace` to gather different types of performance information.
+
+Here's a simple example with a C program:
+
+```c
+// your_program.c
+#include <stdio.h>
+
+void myFunction() {
+    for (int i = 0; i < 1000000; ++i) {
+        // Your code here
+    }
+}
+
+int main() {
+    myFunction();
+    return 0;
+}
+```
+
+Compile and run it with perf:
+
+```bash
+gcc -g your_program.c -o your_program
+perf record -o perf.data ./your_program
+perf report -i perf.data
+```
+
+Remember to adapt these steps based on your program's characteristics and the specific aspects you want to monitor.
