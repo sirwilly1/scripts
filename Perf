@@ -119,3 +119,98 @@ perf report -i perf.data
 ```
 
 Remember to adapt these steps based on your program's characteristics and the specific aspects you want to monitor.
+
+
+Certainly! Here's a list of 10 Linux performance analysis tools, including `perf`, that you can use to identify program bottlenecks:
+
+1. **`perf`:**
+   - Command-line tool for Linux performance analysis. It provides a wide range of features, including CPU profiling, event monitoring, and more.
+
+2. **`strace`:**
+   - Traces system calls and signals, helping you understand the interactions between your program and the kernel.
+
+3. **`gdb`:**
+   - GNU Debugger. While traditionally used for debugging, it can also help identify performance bottlenecks through profiling and tracing features.
+
+4. **`htop`:**
+   - An interactive process viewer that provides a comprehensive overview of system resource usage, making it easy to spot performance bottlenecks.
+
+5. **`iotop`:**
+   - Monitors and displays I/O usage by processes, helping identify programs causing disk I/O bottlenecks.
+
+6. **`vmstat`:**
+   - Reports information about processes, memory, paging, block I/O, traps, and CPU activity, offering insights into overall system performance.
+
+7. **`sar`:**
+   - System Activity Reporter collects and reports system activity information, including CPU, memory, and disk usage.
+
+8. **`nmon`:**
+   - A system monitoring tool that displays and records various performance data, providing a holistic view of system resource usage.
+
+9. **`valgrind`:**
+   - A suite of tools for debugging and profiling. Memcheck, one of its tools, helps find memory-related issues that can contribute to performance problems.
+
+10. **`dstat`:**
+    - Combines information from various system resources into a single view, facilitating the analysis of CPU, disk, network, and other performance metrics.
+
+These tools offer a variety of approaches to performance analysis, and the choice depends on the specific nature of your investigation and the type of bottleneck you're trying to identify.
+
+
+
+Certainly! Here are examples using each of the mentioned tools with the provided C example:
+
+1. **`perf`:**
+   ```bash
+   gcc -g your_program.c -o your_program
+   perf record -o perf.data ./your_program
+   perf report -i perf.data
+   ```
+
+2. **`strace`:**
+   ```bash
+   strace ./your_program
+   ```
+
+3. **`gdb`:**
+   ```bash
+   gcc -g your_program.c -o your_program
+   gdb -ex "run" -ex "bt" -ex "quit" --args ./your_program
+   ```
+
+4. **`htop`:**
+   ```bash
+   htop
+   ```
+
+5. **`iotop`:**
+   ```bash
+   iotop
+   ```
+
+6. **`vmstat`:**
+   ```bash
+   vmstat 1
+   ```
+
+7. **`sar`:**
+   ```bash
+   sar -u 1
+   ```
+
+8. **`nmon`:**
+   ```bash
+   nmon
+   ```
+
+9. **`valgrind`:**
+   ```bash
+   gcc -g your_program.c -o your_program
+   valgrind --tool=memcheck ./your_program
+   ```
+
+10. **`dstat`:**
+    ```bash
+    dstat -c --top-cpu -dn --top-io --top-mem
+    ```
+
+Remember to adjust the commands based on your specific needs and the information you want to gather. Additionally, some tools may require installation through your package manager if not already available on your system.
