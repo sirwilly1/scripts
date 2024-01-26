@@ -1,0 +1,40 @@
+To use UPX for PowerPC on Debian, you'll need to follow these steps:
+
+1. **Install UPX on Debian:**
+   Start by installing UPX on your Debian system. Open a terminal and run:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install upx-ucl
+   ```
+
+   The package `upx-ucl` provides the UPX executable. Note that the name might vary slightly depending on your Debian version.
+
+2. **Navigate to your PowerPC Executable:**
+   Open a terminal and navigate to the directory where your PowerPC executable is located.
+
+   ```bash
+   cd /path/to/your/executables
+   ```
+
+3. **Use UPX on PowerPC Executable:**
+   Run UPX on your PowerPC executable:
+
+   ```bash
+   upx-ucl your_executable
+   ```
+
+   Replace `your_executable` with the name of your PowerPC executable.
+
+   If you encounter any issues with this UPX version, you may need to explore alternative methods or versions that specifically support the PowerPC architecture.
+
+4. **Decompression (if needed):**
+   If you need to decompress the executable, you can use:
+
+   ```bash
+   upx-ucl -d your_executable
+   ```
+
+   This will restore the executable to its original state.
+
+Always check the UPX version provided by the Debian package manager to ensure it supports the PowerPC architecture. If the Debian repository doesn't have an appropriate UPX version, consider checking the official UPX GitHub releases page (https://github.com/upx/upx/releases) for a version compiled for PowerPC, and follow the manual installation steps.
