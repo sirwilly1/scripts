@@ -1,0 +1,13 @@
+To launch VSCode using the command "code ." in Debian, you need to make sure the `code` command is available in your system's PATH. If it's not already set up, you can do this by creating a symbolic link to the VSCode executable. Here's how:
+
+1. Open a terminal window.
+2. Navigate to the directory where VSCode is installed. This might be `/usr/share/code` or a similar location.
+3. Create a symbolic link to the `code` executable using the following command:
+
+```
+sudo ln -s /usr/share/code/bin/code /usr/bin/code
+```
+
+This command creates a symbolic link named `code` in `/usr/bin` that points to the `code` executable in the VSCode installation directory.
+
+Once you've done this, you should be able to launch VSCode from the terminal using the command `code .`.
