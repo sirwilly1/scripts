@@ -1,0 +1,21 @@
+Sure, here's a Python script that reads a binary file and packs the data in the specified format:
+
+```python
+import struct
+
+def pack_binary_file(file_path, packet_size):
+    with open(file_path, 'rb') as file:
+        data = file.read()
+    
+    num_packets = len(data) // packet_size
+    packed_data = struct.pack(f'!I{packet_size}s' * num_packets, *(packet_size, data[i:i+packet_size] for i in range(0, len(data), packet_size)))
+
+    return struct.pack('!I', num_packets) + packed_data
+
+# Example usage:
+file_path = 'binary_file.bin'
+packet_size = 1024
+packed_data = pack_binary_file(file_path, packet_size)
+```
+
+This script reads a binary file specified by `file_path`, divides it into packets of size `packet_size`, and then packs the data in the specified format `<num_of_packets> <packet_size><data><packet_size><data>…`.
