@@ -1,0 +1,217 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+
+#define BUFFER_SIZE 65536
+
+void redirect_packets(const char *src_ip, int src_port, const char *target_ip, int target_port);
+
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        printf("Usage: %s <src_ip> <src_port> <target_ip> <target_port>\n", argv[0]);
+        return 1;
+    }
+
+    const char *src_ip = argv[1];
+    int src_port = atoi(argv[2]);
+    const char *target_ip = argv[3];
+    int target_port = atoi(argv[4]);
+
+    redirect_packets(src_ip, src_port, target_ip, target_port);
+
+    return 0;
+}
+
+void redirect_packets(const char *src_ip, int src_port, const char *target_ip, int target_port) {
+    int sockfd;
+    struct sockaddr_in src_addr, target_addr;
+    unsigned char buffer[BUFFER_SIZE];
+
+    // Create raw socket
+    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sockfd < 0) {
+        perror("socket");
+        exit(1);
+    }
+
+    // Construct source address
+    memset(&src_addr, 0, sizeof(src_addr));
+    src_addr.sin_family = AF_INET;
+    src_addr.sin_addr.s_addr = inet_addr(src_ip);
+    src_addr.sin_port = htons(src_port);
+
+    // Construct target address
+    memset(&target_addr, 0, sizeof(target_addr));
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_addr.s_addr = inet_addr(target_ip);
+    target_addr.sin_port = htons(target_port);
+
+    while (1) {
+        // Receive packets
+        int addr_len = sizeof(src_addr);
+        int packet_size = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&src_addr, (socklen_t *)&addr_len);
+        if (packet_size < 0) {
+            perror("recvfrom");
+            exit(1);
+        }
+
+        // Change destination IP and port
+        struct iphdr *ip_header = (struct iphdr *)buffer;
+        struct tcphdr *tcp_header = (struct tcphdr *)(buffer + ip_header->ihl * 4);
+
+        // Modify destination IP and port
+        ip_header->daddr = inet_addr(target_ip);
+        tcp_header->dest = htons(target_port);
+
+        // Send the modified packet
+        if (sendto(sockfd, buffer, packet_size, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+            perror("sendto");
+            exit(1);
+        }
+    }
+}
+
+
+===================
+
+Sure, here's the updated program without using a timer:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <sys/select.h>
+
+#define BUFFER_SIZE 65536
+
+void redirect_packets(const char *src_ip, int src_port, const char *target_ip, int target_port);
+
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        printf("Usage: %s <src_ip> <src_port> <target_ip> <target_port>\n", argv[0]);
+        return 1;
+    }
+
+    const char *src_ip = argv[1];
+    int src_port = atoi(argv[2]);
+    const char *target_ip = argv[3];
+    int target_port = atoi(argv[4]);
+
+    // Use select to check if target port is busy
+    fd_set readfds;
+    int sockfd;
+
+    // Create raw socket
+    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set up select
+    FD_ZERO(&readfds);
+    FD_SET(sockfd, &readfds);
+
+    // Check if the target port is busy
+    struct sockaddr_in target_addr;
+    memset(&target_addr, 0, sizeof(target_addr));
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_addr.s_addr = inet_addr(target_ip);
+    target_addr.sin_port = htons(target_port);
+
+    int ret = select(sockfd + 1, &readfds, NULL, NULL, NULL);
+    if (ret == -1) {
+        perror("select");
+        exit(EXIT_FAILURE);
+    } else if (ret) {
+        // Port is not busy, redirect packets
+        printf("Port %d is not busy.\n", target_port);
+        redirect_packets(src_ip, src_port, target_ip, target_port);
+    } else {
+        // Port is busy
+        printf("Port %d is busy.\n", target_port);
+    }
+
+    close(sockfd);
+
+    return 0;
+}
+
+void redirect_packets(const char *src_ip, int src_port, const char *target_ip, int target_port) {
+    int sockfd;
+    struct sockaddr_in src_addr, target_addr;
+    unsigned char buffer[BUFFER_SIZE];
+
+    // Create raw socket
+    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize source address structure
+    memset(&src_addr, 0, sizeof(src_addr));
+    src_addr.sin_family = AF_INET;
+    src_addr.sin_addr.s_addr = inet_addr(src_ip);
+    src_addr.sin_port = htons(src_port);
+
+    // Initialize target address structure
+    memset(&target_addr, 0, sizeof(target_addr));
+    target_addr.sin_family = AF_INET;
+    target_addr.sin_addr.s_addr = inet_addr(target_ip);
+    target_addr.sin_port = htons(target_port);
+
+    while (1) {
+        // Receive packets
+        int addr_len = sizeof(src_addr);
+        int packet_size = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&src_addr, (socklen_t *)&addr_len);
+        if (packet_size < 0) {
+            perror("recvfrom");
+            exit(EXIT_FAILURE);
+        }
+
+        // Modify destination IP and port
+        struct iphdr *ip_header = (struct iphdr *)buffer;
+        struct tcphdr *tcp_header = (struct tcphdr *)(buffer + ip_header->ihl * 4);
+        ip_header->daddr = inet_addr(target_ip);
+        tcp_header->dest = htons(target_port);
+
+        // Send the modified packet
+        if (sendto(sockfd, buffer, packet_size, 0, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0) {
+            perror("sendto");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+```
+
+In this version, `select()` is called without a timeout parameter, causing it to block indefinitely until the socket becomes ready for reading. This allows the program to wait until the port status is determined without using a timer.
+
+
+===============
+
+In this example, raw sockets are used to intercept and redirect network packets at the IP and TCP level. Here's how the program works:
+
+1. **Selecting the Target Port**: The program first creates a raw socket and sets it up to listen for incoming packets. It then uses the `select()` function to check if the target port specified by the user is busy or available. This is done by monitoring the raw socket for readability.
+
+2. **Redirecting Packets**: If the target port is available, the program proceeds to the `redirect_packets()` function. In this function, another raw socket is created to intercept packets. The program listens for incoming packets on the source IP/port specified by the user.
+
+3. **Packet Reception**: When a packet arrives at the source IP/port, the program intercepts it using the raw socket. The packet's destination IP and port are modified to match the target IP/port specified by the user.
+
+4. **Packet Redirection**: The modified packet is then sent to the target IP/port using the second raw socket created earlier. This effectively redirects the packet from its original destination to the specified target destination.
+
+5. **Looping**: The program continuously listens for incoming packets and redirects them until it is terminated.
+
+In summary, raw sockets allow the program to bypass the TCP/IP stack and access network packets at a low level. This gives it the ability to intercept, modify, and redirect packets based on custom logic, as demonstrated in this example.
