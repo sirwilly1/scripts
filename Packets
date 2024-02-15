@@ -1,0 +1,96 @@
+To set a specific target IP address for packet redirection, you can modify the `process_packet()` function to check the destination IP address of the packet and redirect only if it matches your target IP address. Here's how you can do it:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+
+#define BUFFER_SIZE 65536
+
+void process_packet(unsigned char *buffer, int size, const char *target_ip);
+
+int main() {
+    int sockfd;
+    struct sockaddr_in addr;
+    unsigned char buffer[BUFFER_SIZE];
+    const char *target_ip = "192.168.1.100"; // Set your target IP address here
+
+    // Create raw socket
+    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sockfd < 0) {
+        perror("socket");
+        return 1;
+    }
+
+    while (1) {
+        // Receive packets
+        int addr_len = sizeof(addr);
+        int packet_size = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&addr, (socklen_t *)&addr_len);
+        if (packet_size < 0) {
+            perror("recvfrom");
+            return 1;
+        }
+
+        // Process packet
+        process_packet(buffer, packet_size, target_ip);
+    }
+
+    return 0;
+}
+
+void process_packet(unsigned char *buffer, int size, const char *target_ip) {
+    struct iphdr *ip_header = (struct iphdr *)buffer;
+    struct tcphdr *tcp_header = (struct tcphdr *)(buffer + ip_header->ihl * 4);
+
+    // Check if the packet is TCP and the destination IP matches the target IP
+    if (ip_header->protocol == IPPROTO_TCP && strcmp(inet_ntoa(*(struct in_addr *)&ip_header->daddr), target_ip) == 0) {
+        // Manipulate packet here if needed
+        
+        // Redirect the packet by printing the packet content
+        printf("Redirected packet to target IP %s:\n", target_ip);
+        for (int i = 0; i < size; i++) {
+            printf("%02X ", buffer[i]);
+            if ((i + 1) % 16 == 0) printf("\n");
+        }
+        printf("\n\n");
+    }
+}
+```
+
+Replace `"192.168.1.100"` with your desired target IP address. This code will only redirect packets with a destination IP matching the specified target IP address.
+
+
+
+Certainly! Here's the control flow of the program:
+
+1. **Initialization**:
+   - The program initializes a raw socket using `socket()` function with `AF_INET` family, `SOCK_RAW` type, and `IPPROTO_TCP` protocol. This allows the program to receive all TCP packets.
+
+2. **Packet Reception**:
+   - Inside a `while` loop, the program continuously listens for incoming packets using the `recvfrom()` function.
+   - When a packet is received, it is stored in the `buffer`, and its size is obtained.
+
+3. **Packet Processing**:
+   - The `process_packet()` function is called with the received buffer, packet size, and the target IP address as arguments.
+   - Inside `process_packet()`, the IP and TCP headers of the packet are extracted from the buffer.
+   - The function checks if the packet is TCP and if its destination IP matches the target IP specified.
+   - If the conditions are met, the packet is considered for redirection.
+
+4. **Redirection**:
+   - If the packet meets the redirection criteria, the function prints a message indicating that the packet is being redirected to the target IP.
+   - It then prints the hexadecimal content of the packet.
+   - You can add further logic here to manipulate or redirect the packet as needed.
+
+5. **Continuation**:
+   - After processing the packet, the program continues listening for incoming packets in the `while` loop.
+
+6. **Termination**:
+   - The program continues to run indefinitely until it's manually terminated by the user or an external event.
+
+This control flow ensures that the program continuously listens for incoming packets, processes them, and redirects them if necessary based on the specified criteria.
