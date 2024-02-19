@@ -1,0 +1,29 @@
+Sure, let's walk through an example using three servers: Server A, Server B, and Server C.
+
+1. **Server A**: This will be the server where the program is running. We'll call it the "redirector" server. It will intercept packets destined for a specific IP/port and redirect them to another IP/port.
+
+2. **Server B**: This server will act as the source of packets. It will send packets to Server A's IP/port, which will then be intercepted and redirected by the program running on Server A.
+
+3. **Server C**: This server will act as the destination of redirected packets. It will receive the packets redirected by the program running on Server A.
+
+Here's how the scenario would play out:
+
+- **Step 1: Compile and Run the Program on Server A**:
+  - Compile the program and run it on Server A. Specify the source IP/port (Server A's IP/port) where packets will be intercepted and the target IP/port (Server C's IP/port) where intercepted packets will be redirected.
+
+- **Step 2: Send Packets from Server B to Server A**:
+  - On Server B, use a tool like `netcat` (`nc`) or `telnet` to send packets to Server A's IP/port. For example:
+    ```
+    echo "Hello, Server A" | nc <Server_A_IP> <Server_A_port>
+    ```
+  - Replace `<Server_A_IP>` and `<Server_A_port>` with the IP address and port where the program is running on Server A.
+
+- **Step 3: Verify Packet Redirection on Server C**:
+  - On Server C, monitor the target IP/port specified in the program running on Server A. You can use packet sniffing tools like Wireshark or tcpdump to capture and inspect network traffic.
+  - Check if the packets intercepted by the program on Server A are successfully redirected to Server C's IP/port.
+
+- **Step 4: Observe Output on Server A**:
+  - On Server A, observe the output of the program to see if it indicates successful packet interception and redirection.
+
+- **Step 5: Terminate the Program on Server A**:
+  - Once testing is complete, terminate the program by pressing `Ctrl+C` in the terminal where the program is running on Server A.
