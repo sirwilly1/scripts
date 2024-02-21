@@ -96,3 +96,24 @@ The program will start capturing packets from the `eth0` interface, and for each
 Remember to replace `eth0` with the name of your actual network interface, and make sure to run the program with `sudo` privileges to allow packet capturing and modification.
 
 You can stop the program at any time by pressing `Ctrl + C` in the terminal.
+
+
+
+
+
+
+The `your_filter_expression_here` placeholder in the code represents a filter expression used by PCAP to specify which packets to capture. This expression allows you to selectively capture packets based on various criteria such as source or destination IP addresses, ports, protocols, packet length, etc.
+
+For example, if you only want to capture TCP packets with a specific destination IP address, you could use a filter expression like `"tcp and dst host 192.168.1.100"`.
+
+Here are a few common filter expression examples:
+
+- `"tcp"`: Captures only TCP packets.
+- `"udp"`: Captures only UDP packets.
+- `"icmp"`: Captures only ICMP (ping) packets.
+- `"host 192.168.1.100"`: Captures packets with the IP address 192.168.1.100 as either the source or destination.
+- `"src host 192.168.1.100"`: Captures packets with the IP address 192.168.1.100 as the source.
+- `"dst host 192.168.1.100"`: Captures packets with the IP address 192.168.1.100 as the destination.
+
+You can customize the filter expression according to your specific requirements for packet capture. Just replace `your_filter_expression_here` in the code with the desired filter expression. If you don't need any filtering, you can use an empty string `""` as the filter expression to capture all packets.
+
