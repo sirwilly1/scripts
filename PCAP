@@ -1,0 +1,98 @@
+To modify a packet header and change the destination IP using PCAP in C, you can follow these general steps:
+
+1. Open a network interface for capturing packets using `pcap_open_live` or open a PCAP file using `pcap_open_offline`.
+2. Create a packet filter if needed using `pcap_compile` and `pcap_setfilter`.
+3. Loop through incoming packets using `pcap_loop` or `pcap_next`.
+4. Parse the packet header to locate the IP header.
+5. Modify the destination IP address in the IP header.
+6. Recalculate the IP header checksum if necessary.
+7. Send the modified packet using `pcap_sendpacket` or manipulate it directly if you're intercepting outgoing packets.
+
+Here's a basic example of modifying the destination IP address of an IPv4 packet:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <pcap.h>
+#include <netinet/ip.h>
+
+#define MAX_PACKET_SIZE 65536
+
+void modify_packet(const u_char *packet, int packet_length, const char *new_destination_ip) {
+    struct ip *ip_header = (struct ip *)(packet + sizeof(struct ether_header));
+    
+    // Change the destination IP address
+    inet_aton(new_destination_ip, &(ip_header->ip_dst));
+
+    // Recalculate the IP header checksum (optional)
+    ip_header->ip_sum = 0; // Zero out the checksum field
+    ip_header->ip_sum = in_cksum((unsigned short *)ip_header, sizeof(struct ip));
+    
+    // Now you can send the modified packet
+}
+
+void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+    modify_packet(packet, header->caplen, "new_destination_ip_here");
+}
+
+int main() {
+    pcap_t *handle;
+    char errbuf[PCAP_ERRBUF_SIZE];
+    struct bpf_program fp;
+    char filter_exp[] = "your_filter_expression_here";
+    bpf_u_int32 mask;
+    bpf_u_int32 net;
+
+    // Open a live capture or a PCAP file
+    handle = pcap_open_live("your_interface_here", MAX_PACKET_SIZE, 1, 1000, errbuf);
+    if (handle == NULL) {
+        fprintf(stderr, "Couldn't open device: %s\n", errbuf);
+        return 2;
+    }
+
+    // Compile and apply the packet filter
+    if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
+        fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        return 2;
+    }
+    if (pcap_setfilter(handle, &fp) == -1) {
+        fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+        return 2;
+    }
+
+    // Start capturing packets
+    pcap_loop(handle, -1, packet_handler, NULL);
+
+    pcap_close(handle);
+    return 0;
+}
+```
+
+Make sure to replace `"new_destination_ip_here"`, `"your_filter_expression_here"`, and `"your_interface_here"` with your desired destination IP address, filter expression, and network interface respectively.
+Also, remember to include the appropriate headers and implement the `in_cksum` function for recalculating the IP header checksum if needed.
+
+Sure, let's create a simple example to demonstrate how to use the code provided to modify the destination IP address of packets captured from a network interface.
+
+First, let's assume you have saved the code I provided in a file named `packet_modifier.c`. 
+
+Then, to compile the code, you can use the following command in your terminal:
+
+```bash
+gcc -o packet_modifier packet_modifier.c -lpcap
+```
+
+This command compiles the C code and links it with the PCAP library.
+
+Now, let's say you want to capture packets from a network interface named `eth0` and change the destination IP address to `192.168.1.100`.
+
+You can run the compiled program with the following command:
+
+```bash
+sudo ./packet_modifier
+```
+
+The program will start capturing packets from the `eth0` interface, and for each captured packet, it will modify the destination IP address to `192.168.1.100`.
+
+Remember to replace `eth0` with the name of your actual network interface, and make sure to run the program with `sudo` privileges to allow packet capturing and modification.
+
+You can stop the program at any time by pressing `Ctrl + C` in the terminal.
