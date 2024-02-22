@@ -1,0 +1,200 @@
+Here's the C program implementing the described logic:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define BUF_SIZE 1024
+
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        printf("Usage: %s <destination_ip> <listen_port> <redirection_port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    char *destination_ip = argv[1];
+    int listen_port = atoi(argv[2]);
+    int redirection_port = atoi(argv[3]);
+
+    // Create a UDP socket
+    int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sockfd < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Bind to the listening port
+    struct sockaddr_in listen_addr;
+    memset(&listen_addr, 0, sizeof(listen_addr));
+    listen_addr.sin_family = AF_INET;
+    listen_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    listen_addr.sin_port = htons(listen_port);
+
+    if (bind(sockfd, (struct sockaddr *)&listen_addr, sizeof(listen_addr)) < 0) {
+        perror("bind");
+        close(sockfd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Set up the destination address
+    struct sockaddr_in dest_addr;
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_addr.s_addr = inet_addr(destination_ip);
+    dest_addr.sin_port = htons(redirection_port);
+
+    char buffer[BUF_SIZE];
+    ssize_t num_bytes_recv;
+
+    while (1) {
+        // Receive data from Server A
+        num_bytes_recv = recvfrom(sockfd, buffer, BUF_SIZE, 0, NULL, 0);
+        if (num_bytes_recv < 0) {
+            perror("recvfrom");
+            close(sockfd);
+            exit(EXIT_FAILURE);
+        }
+
+        // Redirect data to Server C
+        if (sendto(sockfd, buffer, num_bytes_recv, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0) {
+            perror("sendto");
+            close(sockfd);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // Close the socket
+    close(sockfd);
+
+    return 0;
+}
+```
+
+To compile and run the program, you can use the following commands:
+
+```bash
+gcc udp_redirect.c -o udp_redirect
+./udp_redirect <destination_ip> <listen_port> <redirection_port>
+```
+
+Replace `<destination_ip>`, `<listen_port>`, and `<redirection_port>` with the appropriate values.
+
+
+-----------
+
+Sure! Let's say we have the following scenario:
+
+- Server A sends UDP packets to Server B.
+- Server B is running the UDP packet redirection program.
+- Server C is the ultimate destination for the redirected UDP packets.
+
+Here's how you could use the program:
+
+1. Compile the program:
+
+```bash
+gcc udp_redirect.c -o udp_redirect
+```
+
+2. Run the program on Server B:
+
+```bash
+./udp_redirect 192.168.1.100 5000 6000
+```
+
+In this example:
+- `192.168.1.100` is the IP address of Server C, the ultimate destination.
+- `5000` is the port on which Server B listens for incoming UDP packets from Server A.
+- `6000` is the port to which Server B redirects the packets before sending them to Server C.
+
+3. Now, Server B is ready to receive packets from Server A on port `5000` and redirect them to Server C at IP address `192.168.1.100` on port `6000`.
+
+4. On Server A, you would send UDP packets to Server B's IP address (`Server_B_IP`) on port `5000`.
+
+With this setup, any UDP packets sent from Server A to Server B's IP address on port `5000` will be redirected by Server B to Server C at IP address `192.168.1.100` on port `6000`.
+
+
+------------
+
+To test the UDP packet redirection program, you can follow these steps:
+
+1. Start by running the program on Server B, as described in the previous example:
+
+```bash
+./udp_redirect <destination_ip> <listen_port> <redirection_port>
+```
+
+For example:
+
+```bash
+./udp_redirect 192.168.1.100 5000 6000
+```
+
+Replace `<destination_ip>`, `<listen_port>`, and `<redirection_port>` with appropriate values.
+
+2. On Server A or any other machine, create a simple UDP client program to send packets to Server B.
+
+For example, you can use a simple Python script like this:
+
+```python
+import socket
+
+# Define the destination IP address and port (Server B's IP and listen_port)
+dest_ip = "Server_B_IP"
+dest_port = 5000
+
+# Create a UDP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Send some data
+data = b"Hello, Server B!"
+sock.sendto(data, (dest_ip, dest_port))
+
+# Close the socket
+sock.close()
+```
+
+Replace `"Server_B_IP"` with the IP address of Server B.
+
+3. Run the Python script on the same machine as Server A or any other machine in the same network. This will send a UDP packet to Server B.
+
+4. Monitor the network traffic on Server B using tools like Wireshark or tcpdump. You should see the incoming UDP packet from the client and the outgoing redirected packet to the destination IP address.
+
+5. Optionally, you can verify on Server C that the UDP packets are arriving correctly.
+
+This test setup allows you to verify that the UDP packet redirection program is working as expected by observing the flow of packets between Server A, Server B, and Server C.
+
+
+
+-----------
+
+
+Sure, here's a simple Python program for Server C that listens for UDP packets, confirms receipt, and prints out the message contents:
+
+```python
+import socket
+
+# Server C's IP address and port to listen on
+listen_ip = "0.0.0.0"  # Listen on all available interfaces
+listen_port = 6000
+
+# Create a UDP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Bind the socket to the listening IP address and port
+sock.bind((listen_ip, listen_port))
+
+print(f"Server C is listening on {listen_ip}:{listen_port}...")
+
+while True:
+    # Receive data and the address of the sender
+    data, addr = sock.recvfrom(1024)
+    print(f"Received a packet from {addr}: {data.decode('utf-8')}")
+```
+
+This program continuously listens for UDP packets on port `6000` on all available network interfaces (`0.0.0.0`). When a packet is received, it prints out the sender's address and the contents of the message.
+
+You can run this program on Server C to confirm that the redirected UDP packets from Server B are being received correctly.
