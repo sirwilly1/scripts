@@ -198,3 +198,111 @@ while True:
 This program continuously listens for UDP packets on port `6000` on all available network interfaces (`0.0.0.0`). When a packet is received, it prints out the sender's address and the contents of the message.
 
 You can run this program on Server C to confirm that the redirected UDP packets from Server B are being received correctly.
+
+
+------
+import pcapy
+from struct import unpack
+
+# Define the network interface to capture packets from
+interface = "eth0"
+
+# Open the network interface in promiscuous mode with a maximum packet size of 65536 bytes
+cap = pcapy.open_live(interface, 65536, True, 100)
+
+print(f"Listening on interface {interface} for UDP packets...")
+
+# Define a callback function to process captured packets
+def packet_callback(header, data):
+    # Extract the Ethernet, IP, and UDP headers from the packet data
+    eth_length = 14
+    ip_header = data[eth_length:20+eth_length]
+    iph = unpack('!BBHHHBBH4s4s', ip_header)
+    version_ihl = iph[0]
+    ihl = version_ihl & 0xF
+    iph_length = ihl * 4
+    udp_header = data[eth_length + iph_length:eth_length + iph_length + 8]
+    udph = unpack('!HHHH', udp_header)
+
+    # Extract the source and destination IP addresses and ports
+    source_ip = ".".join(map(str, iph[8]))
+    dest_ip = ".".join(map(str, iph[9]))
+    source_port = udph[0]
+    dest_port = udph[1]
+
+    # Check if the packet is a UDP packet
+    if iph[6] == 17:
+        print(f"UDP Packet - Source IP: {source_ip}, Source Port: {source_port}, Destination IP: {dest_ip}, Destination Port: {dest_port}")
+
+# Start capturing packets and call the callback function for each captured packet
+cap.loop(-1, packet_callback)
+
+
+
+
+
+--------
+To read packets at the kernel level in Python, you can use the `pcapy` library, which is a Python extension module that interfaces with the libpcap packet capture library. Here's a basic Python script using `pcapy` to read packets at the kernel level:
+
+```python
+import pcapy
+
+# Define the network interface to capture packets from
+interface = "eth0"
+
+# Open the network interface in promiscuous mode with a maximum packet size of 65536 bytes
+cap = pcapy.open_live(interface, 65536, True, 100)
+
+print(f"Listening on interface {interface}...")
+
+# Define a callback function to process captured packets
+def packet_callback(header, data):
+    print(f"Packet captured: {len(data)} bytes")
+
+# Start capturing packets and call the callback function for each captured packet
+cap.loop(-1, packet_callback)
+```
+
+This script listens for packets on the specified network interface (`eth0` in this example) using `pcapy.open_live()`. It enters promiscuous mode (`True` argument) to capture all packets on the network, regardless of the destination address.
+
+The `packet_callback()` function is called for each captured packet. In this example, it simply prints the length of the captured packet.
+
+To run this script, make sure you have the `pcapy` library installed. You can install it via pip:
+
+```bash
+pip install pcapy
+```
+
+Then, execute the script with root privileges since capturing packets usually requires elevated permissions:
+
+```bash
+sudo python your_script.py
+```
+
+Replace `"eth0"` with the name of the network interface you want to capture packets from. You can use tools like `ifconfig` or `ip addr` to list available network interfaces on your system.
+
+
+--—-------
+
+
+
+Yes, you can use `tcpdump` to capture and analyze UDP packets. Although the name suggests a focus on TCP, `tcpdump` is a versatile tool that can capture and analyze packets of various protocols, including UDP.
+
+To capture UDP packets using `tcpdump`, you can specify the UDP protocol as part of the filter expression. Here's how you can do it:
+
+```bash
+sudo tcpdump -i <interface> udp
+```
+
+Replace `<interface>` with the name of the network interface you want to capture packets from, such as `eth0` or `wlan0`.
+
+This command will capture all UDP packets on the specified interface and print them to the console in real-time. You can further refine the filter expression to capture specific UDP packets based on source or destination ports, IP addresses, etc. For example:
+
+```bash
+sudo tcpdump -i <interface> udp port 53
+```
+
+This command captures UDP packets with destination port 53 (typically DNS traffic).
+
+You can refer to the `tcpdump` manual (`man tcpdump`) for more advanced filtering options and usage examples.
+
