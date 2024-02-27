@@ -419,3 +419,140 @@ int main() {
 ```
 
 In this modified version, `recv()` is used for both UDP and TCP. For UDP, the sender's address is not retrieved directly, but since the target address is known, it can be used for sending the response back. For TCP, the sender's address is not relevant as it's a connection-oriented protocol.
+
+
+
+
+---------
+import socket
+import sys
+
+def receive_data(protocol, listen_port):
+    if protocol.lower() == 'udp':
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    elif protocol.lower() == 'tcp':
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    else:
+        print("Invalid protocol")
+        return
+
+    try:
+        sock.bind(('localhost', listen_port))
+        sock.listen(1)  # Only needed for TCP
+
+        print(f"Listening for {protocol.upper()} data on port {listen_port}...")
+        while True:
+            if protocol.lower() == 'udp':
+                data, addr = sock.recvfrom(1024)
+                print(f"Received UDP data from {addr}: {data.decode()}")
+            elif protocol.lower() == 'tcp':
+                conn, addr = sock.accept()
+                data = conn.recv(1024)
+                print(f"Received TCP data from {addr}: {data.decode()}")
+                conn.close()
+    finally:
+        sock.close()
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: python receive_data.py <protocol> <port>")
+        sys.exit(1)
+    protocol = sys.argv[1]
+    listen_port = int(sys.argv[2])
+    receive_data(protocol, listen_port)
+
+
+-------
+python receive_data.py <protocol> <port>
+
+-------
+
+Certainly! Here's the modified version of the program where the port is passed in as an argument:
+
+```python
+import socket
+import sys
+
+def receive_tcp_data(listen_port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(('0.0.0.0', listen_port))
+    sock.listen(1)
+    
+    print(f"Listening for TCP data on port {listen_port}...")
+    while True:
+        conn, addr = sock.accept()
+        with conn:
+            print(f"Connection from {addr}")
+            data = conn.recv(1024)
+            if data:
+                print(f"Received TCP data: {data.decode()}")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python receive_tcp_data.py <port>")
+        sys.exit(1)
+    listen_port = int(sys.argv[1])
+    receive_tcp_data(listen_port)
+```
+
+Now you can run the program from the command line like this:
+
+```
+python receive_tcp_data.py <port>
+```
+
+Replace `<port>` with the desired port number.
+
+
+------
+
+Sure! Here's the modified program to listen for both TCP and UDP data, with an additional argument for the protocol:
+
+```python
+import socket
+import sys
+
+def receive_data(protocol, listen_port):
+    if protocol.lower() == 'udp':
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    elif protocol.lower() == 'tcp':
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    else:
+        print("Invalid protocol")
+        return
+
+    sock.bind(('0.0.0.0', listen_port))
+    if protocol.lower() == 'tcp':
+        sock.listen(1)
+        
+    print(f"Listening for {protocol.upper()} data on port {listen_port}...")
+    while True:
+        if protocol.lower() == 'udp':
+            data, addr = sock.recvfrom(1024)
+            print(f"Received UDP data from {addr}: {data.decode()}")
+        elif protocol.lower() == 'tcp':
+            conn, addr = sock.accept()
+            with conn:
+                print(f"Connection from {addr}")
+                data = conn.recv(1024)
+                if data:
+                    print(f"Received TCP data: {data.decode()}")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: python receive_data.py <protocol> <port>")
+        sys.exit(1)
+    protocol = sys.argv[1]
+    listen_port = int(sys.argv[2])
+    receive_data(protocol, listen_port)
+```
+
+Now you can run the program from the command line like this:
+
+```
+python receive_data.py <protocol> <port>
+```
+
+Replace `<protocol>` with 'UDP' or 'TCP' and `<port>` with the desired port number.
+
+
