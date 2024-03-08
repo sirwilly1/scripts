@@ -1,0 +1,76 @@
+Before you can use cheat codes, you must either use the cheat code "cheat on" or press Shift+Backspace. You should get a "Cheats enabled" message when you do this.
+
+
+mouseflip	Inverts the mouse vertical rotation direction	
+shakey	Toggle screen shake when units die	
+time toggle	Turns the mission timer on or off (campaign mode only)	✗
+
+hard	Sets difficulty to hard (replaces previous difficulty)	
+normal	Sets difficulty to normal (replaces previous difficulty)	
+easy	Sets difficulty to easy (replaces previous difficulty)	
+let me win	Causes you to win the current mission (campaign mode only)	✗
+Misc. & Info.
+build info	Tells you the date when the game was built	
+count me	Prints the number of objects in the game	
+demo	Starts demo mode - See "Additional Cheats" for description	
+droidinfo	Shows info & stats	
+no faults	Audio Clip - "There are no faults in the renderer at the moment"	
+sensors	Shows sensor ranges when sensors are selected	
+timedemo	Shows game info & stats	
+showorders	Shows current order & action for selected droid	
+clone wars	Creates multiple copies of selected 
+
+more power	Adds an additional 1000 power	
+superpower	Maximum power	
+whale fin	Toggles infinite power	
+
+give all	Allows you to build & research everything	✗
+research all	Gives you everything researched	
+work harder	Finishes all active research	
+
+biffer baker	Your units are stronger & deal more damage (replaces previous difficulty)	
+double up	Your units are twice as strong (replaces previous difficulty)	
+get off my land	 all visible enemy units & structures on the map	
+reload me	Immediately reloads currently selected /structure	
+kill the selected units	
+Weather
+deity	Lets you see everything on the map (equivalent of having Uplink Center)	
+john kettley	Changes the weather to rain, snow, or clear. Keep entering code to cycle weather.
+
+
+Certainly! Here's a list of cheat codes for Warzone 2100:
+
+1. **instant_build**: Instantly completes the construction of buildings and units.
+2. **finish_research**: Instantly completes the current research project.
+3. **fullmap**: Reveals the entire map, exposing all terrain and enemy units.
+4. **resources**: Grants a large amount of resources (oil, power, and research points).
+5. **toggle_fog**: Toggles the fog of war on or off, revealing or hiding enemy movements.
+6. **toggle_ai**: Toggles AI control on or off for selected units or structures.
+7. **add_structure [structure_id]**: Adds a specified structure to the player's inventory.
+8. **add_propulsion [propulsion_id]**: Adds a specified propulsion type to the player's inventory.
+9. **add_body [body_id]**: Adds a specified body type to the player's inventory.
+10. **add_component [component_id]**: Adds a specified component to the player's inventory.
+11. **add_research [research_id]**: Adds a specified research project to the player's queue.
+
+To use these cheat codes, you can open the game's console during gameplay and type in the desired cheat followed by any required parameters (if applicable). Make sure to follow the correct syntax for each cheat code to activate its effect.
+
+
+
+
+Debug menu
+
+The debug menu can be opened using Ctrl+O. It has buttons for switching players, as well as instantly creating units and structures.
+
+Cheat shortcuts
+
+Some cheat codes can be used with keyboard shortcuts:
+
+Ctrl+X	work harder	Finishes all active research
+Ctrl+G	deity	Lets you see everything on the map (equivalent of having Uplink Center)
+Alt+K	kill	 the selected units
+Alt+A	give all	Allows you to build & research everything
+Drive mode
+
+Drive mode is an experimental feature in which you can control a using the arrow keys. Since it is experimental, it requires cheat mode, and is not available in multiplayer games.
+
+To enter drive mode, once you're in cheat mode, select the юнит you want to drive, press Spacebar and then press Shift+D.
