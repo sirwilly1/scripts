@@ -1,96 +1,131 @@
-To set a specific target IP address for packet redirection, you can modify the `process_packet()` function to check the destination IP address of the packet and redirect only if it matches your target IP address. Here's how you can do it:
+
+Creating a packet stager involves several steps. Here's a simple example of how you could break up a large payload into smaller packets in C:
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+#define PACKET_SIZE 64
+
+void sendPacket(char *packet, int size) {
+    // Simulate sending the packet over a network
+    printf("Sending packet: %s\n", packet);
+}
+
+void packetStager(char *payload, int payloadSize) {
+    int numPackets = payloadSize / PACKET_SIZE;
+    int remainder = payloadSize % PACKET_SIZE;
+    
+    int i;
+    for (i = 0; i < numPackets; i++) {
+        char packet[PACKET_SIZE + 1]; // +1 for null terminator
+        strncpy(packet, &payload[i * PACKET_SIZE], PACKET_SIZE);
+        packet[PACKET_SIZE] = '\0'; // Null terminate the packet
+        sendPacket(packet, PACKET_SIZE);
+    }
+    
+    if (remainder > 0) {
+        char packet[remainder + 1]; // +1 for null terminator
+        strncpy(packet, &payload[numPackets * PACKET_SIZE], remainder);
+        packet[remainder] = '\0'; // Null terminate the packet
+        sendPacket(packet, remainder);
+    }
+}
+
+int main() {
+    char payload[] = "This is a large payload that needs to be broken up into smaller packets.";
+    int payloadSize = strlen(payload);
+    
+    packetStager(payload, payloadSize);
+    
+    return 0;
+}
+```
+
+This code breaks up a given payload into smaller packets of a defined size (`PACKET_SIZE`) and sends each packet using the `sendPacket` function (which you would need to implement according to your requirements).
+
+
+
+-------
+
+Sure, here's a basic example of a socket program in C that sends the payload over a socket connection:
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
-#define BUFFER_SIZE 65536
+#define SERVER_IP "127.0.0.1"
+#define SERVER_PORT 8888
+#define PACKET_SIZE 64
 
-void process_packet(unsigned char *buffer, int size, const char *target_ip);
-
-int main() {
-    int sockfd;
-    struct sockaddr_in addr;
-    unsigned char buffer[BUFFER_SIZE];
-    const char *target_ip = "192.168.1.100"; // Set your target IP address here
-
-    // Create raw socket
-    sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-    if (sockfd < 0) {
-        perror("socket");
-        return 1;
-    }
-
-    while (1) {
-        // Receive packets
-        int addr_len = sizeof(addr);
-        int packet_size = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&addr, (socklen_t *)&addr_len);
-        if (packet_size < 0) {
-            perror("recvfrom");
-            return 1;
-        }
-
-        // Process packet
-        process_packet(buffer, packet_size, target_ip);
-    }
-
-    return 0;
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
 }
 
-void process_packet(unsigned char *buffer, int size, const char *target_ip) {
-    struct iphdr *ip_header = (struct iphdr *)buffer;
-    struct tcphdr *tcp_header = (struct tcphdr *)(buffer + ip_header->ihl * 4);
+void sendPacket(int sockfd, char *packet, int size) {
+    int n = write(sockfd, packet, size);
+    if (n < 0) 
+        error("ERROR writing to socket");
+}
 
-    // Check if the packet is TCP and the destination IP matches the target IP
-    if (ip_header->protocol == IPPROTO_TCP && strcmp(inet_ntoa(*(struct in_addr *)&ip_header->daddr), target_ip) == 0) {
-        // Manipulate packet here if needed
-        
-        // Redirect the packet by printing the packet content
-        printf("Redirected packet to target IP %s:\n", target_ip);
-        for (int i = 0; i < size; i++) {
-            printf("%02X ", buffer[i]);
-            if ((i + 1) % 16 == 0) printf("\n");
-        }
-        printf("\n\n");
+void packetStager(char *payload, int payloadSize) {
+    int sockfd, portno;
+    struct sockaddr_in serv_addr;
+    struct hostent *server;
+
+    portno = SERVER_PORT;
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) 
+        error("ERROR opening socket");
+    
+    server = gethostbyname(SERVER_IP);
+    if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host\n");
+        exit(0);
     }
+    
+    bzero((char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy((char *)server->h_addr, 
+         (char *)&serv_addr.sin_addr.s_addr,
+         server->h_length);
+    serv_addr.sin_port = htons(portno);
+    
+    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
+        error("ERROR connecting");
+    
+    int numPackets = payloadSize / PACKET_SIZE;
+    int remainder = payloadSize % PACKET_SIZE;
+    
+    int i;
+    for (i = 0; i < numPackets; i++) {
+        char packet[PACKET_SIZE];
+        strncpy(packet, &payload[i * PACKET_SIZE], PACKET_SIZE);
+        sendPacket(sockfd, packet, PACKET_SIZE);
+    }
+    
+    if (remainder > 0) {
+        char packet[remainder];
+        strncpy(packet, &payload[numPackets * PACKET_SIZE], remainder);
+        sendPacket(sockfd, packet, remainder);
+    }
+    
+    close(sockfd);
+}
+
+int main() {
+    char payload[] = "This is a large payload that needs to be broken up into smaller packets.";
+    int payloadSize = strlen(payload);
+    
+    packetStager(payload, payloadSize);
+    
+    return 0;
 }
 ```
 
-Replace `"192.168.1.100"` with your desired target IP address. This code will only redirect packets with a destination IP matching the specified target IP address.
-
-
-Certainly! Here's the control flow of the program:
-
-1. **Initialization**:
-   - The program initializes a raw socket using `socket()` function with `AF_INET` family, `SOCK_RAW` type, and `IPPROTO_TCP` protocol. This allows the program to receive all TCP packets.
-
-2. **Packet Reception**:
-   - Inside a `while` loop, the program continuously listens for incoming packets using the `recvfrom()` function.
-   - When a packet is received, it is stored in the `buffer`, and its size is obtained.
-
-3. **Packet Processing**:
-   - The `process_packet()` function is called with the received buffer, packet size, and the target IP address as arguments.
-   - Inside `process_packet()`, the IP and TCP headers of the packet are extracted from the buffer.
-   - The function checks if the packet is TCP and if its destination IP matches the target IP specified.
-   - If the conditions are met, the packet is considered for redirection.
-
-4. **Redirection**:
-   - If the packet meets the redirection criteria, the function prints a message indicating that the packet is being redirected to the target IP.
-   - It then prints the hexadecimal content of the packet.
-   - You can add further logic here to manipulate or redirect the packet as needed.
-
-5. **Continuation**:
-   - After processing the packet, the program continues listening for incoming packets in the `while` loop.
-
-6. **Termination**:
-   - The program continues to run indefinitely until it's manually terminated by the user or an external event.
-
-This control flow ensures that the program continuously listens for incoming packets, processes them, and redirects them if necessary based on the specified criteria.
+This code sets up a client socket and connects to a server socket running on the specified IP address (`SERVER_IP`) and port number (`SERVER_PORT`). Then, it breaks up the payload into smaller packets and sends each packet over the socket connection. You'll need a corresponding server program to receive these packets.
 
