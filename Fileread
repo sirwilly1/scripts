@@ -1,7 +1,7 @@
-Here's an updated version of the function that checks only the first 20 hexadecimal values in the range to see if any of them are multiples of 4:
+Here's an updated version of the function that prints out a list of hexadecimal values between the given range that are multiples of 4, up to a maximum of 20 values:
 
 ```python
-def is_hex_between_and_multiple_of_four(start_hex, end_hex):
+def list_hex_between_and_multiple_of_four(start_hex, end_hex):
     # Convert the hexadecimal strings to integers
     start_value = int(start_hex, 16)
     end_value = int(end_hex, 16)
@@ -9,12 +9,12 @@ def is_hex_between_and_multiple_of_four(start_hex, end_hex):
     # Check if the range is valid
     if start_value > end_value:
         print("Invalid range: start value should be less than or equal to end value.")
-        return None
+        return
     
-    # Iterate through the first 20 values in the range
-    for i in range(min(20, end_value - start_value + 1)):
-        value = start_value + i
-        
+    multiples_of_four = []
+    
+    # Iterate through the range
+    for value in range(start_value, end_value + 1):
         # Get the last two hexadecimal digits
         last_two_digits = value & 0xFF
         
@@ -22,29 +22,40 @@ def is_hex_between_and_multiple_of_four(start_hex, end_hex):
         if last_two_digits % 4 == 0:
             # Convert the integer back to hexadecimal
             hex_value = hex(value)
-            print(f"{hex_value} is a multiple of 4 between {start_hex} and {end_hex}.")
-            return hex_value
+            multiples_of_four.append(hex_value)
+            
+            # Break the loop if we have 20 values
+            if len(multiples_of_four) == 20:
+                break
     
-    print(f"No hexadecimal value in the first 20 values between {start_hex} and {end_hex} is a multiple of 4.")
-    return None
+    if multiples_of_four:
+        print(f"Hexadecimal values between {start_hex} and {end_hex} that are multiples of 4:")
+        for hex_value in multiples_of_four:
+            print(hex_value)
+    else:
+        print(f"No hexadecimal value between {start_hex} and {end_hex} is a multiple of 4.")
 
 # Example usage
-result = is_hex_between_and_multiple_of_four("0x04dc0d39", "0x04dc0d5b")
-print(result)
-
-result = is_hex_between_and_multiple_of_four("0xDEADBEEC", "0xDEADBEEF")
-print(result)
+list_hex_between_and_multiple_of_four("0x04dc0d39", "0x04dc0d5b")
+list_hex_between_and_multiple_of_four("0xDEADBEEC", "0xDEADBEEF")
 ```
 
-Here's what has changed in the updated function:
+Here's how the updated `list_hex_between_and_multiple_of_four` function works:
 
-1. Instead of iterating through the entire range of values between `start_value` and `end_value`, the loop now iterates only through the first 20 values using `range(min(20, end_value - start_value + 1))`.
-2. The loop variable `i` is used to calculate the current value as `value = start_value + i`.
-3. The rest of the logic remains the same: it checks if the last two digits of the current value are divisible by 4, and if so, it prints and returns the corresponding hexadecimal value.
-4. If no value in the first 20 values is a multiple of 4, it prints a message indicating that no value was found and returns `None`.
+1. The function takes two hexadecimal strings, `start_hex` and `end_hex`, as input.
+2. It converts the hexadecimal strings to integers using `int(start_hex, 16)` and `int(end_hex, 16)`.
+3. It checks if the range is valid (i.e., `start_value` is less than or equal to `end_value`). If the range is invalid, it prints an error message and returns.
+4. It creates an empty list `multiples_of_four` to store the hexadecimal values that are multiples of 4.
+5. It iterates through the range of values between `start_value` and `end_value` (inclusive) using `range(start_value, end_value + 1)`.
+6. For each value in the range:
+   - It gets the last two digits of the hexadecimal value using `value & 0xFF`.
+   - It checks if the last two digits are divisible by 4 using `last_two_digits % 4 == 0`.
+   - If the last two digits are divisible by 4, it converts the integer value back to a hexadecimal string using `hex(value)` and appends it to the `multiples_of_four` list.
+   - If the length of the `multiples_of_four` list reaches 20, it breaks out of the loop to limit the output to 20 values.
+7. After the loop, it checks if the `multiples_of_four` list is not empty.
+   - If the list is not empty, it prints a header message and then prints each hexadecimal value in the list on a new line.
+   - If the list is empty, it prints a message indicating that no value in the range is a multiple of 4.
 
-The example usage at the end remains the same, demonstrating the function with two different ranges:
-- `"0x04dc0d39"` to `"0x04dc0d5b"` (where `0x04dc0d3c` is a multiple of 4 in this range)
-- `"0xDEADBEEC"` to `"0xDEADBEEF"` (where there are no multiples of 4 in the first 20 values of this range)
-
-Note that if the range between `start_value` and `end_value` is less than 20, the function will check the entire range.
+The example usage at the end demonstrates how to use the `list_hex_between_and_multiple_of_four` function with two different ranges:
+- `"0x04dc0d39"` to `"0x04dc0d5b"` (where there is one multiple of 4 in this range)
+- `"0xDEADBEEC"` to `"0xDEADBEEF"` (where there are no multiples of 4 in this range)
