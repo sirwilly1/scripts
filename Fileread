@@ -1,0 +1,38 @@
+Here's an example of a `readonly://` region in an INI file that wouldn't exist on a real device, populated with a magic value. Then, there's a C payload that checks for that magic value and prints "matched" if it matches correctly.
+
+**INI File**
+
+```
+[readonly://magic_region]
+magic_value=0xDEADBEEF
+```
+
+**C Payload**
+
+```c
+#include <stdio.h>
+#include <inttypes.h>
+
+int main() {
+    uint32_t magic_value = 0xDEADBEEF;
+    
+    // Assuming the magic_value is read from some configuration file or device
+    uint32_t read_magic_value = 0xDEADBEEF; // 0xDEADBEEF is just an example
+
+    if (read_magic_value == magic_value) {
+        printf("matched\n");
+    } else {
+        printf("not matched\n");
+    }
+
+    return 0;
+}
+```
+
+In this example, the INI file has a `readonly://` region named `magic_region`, which contains a `magic_value` set to `0xDEADBEEF`. This is a value that would not exist on a real device, as it is a commonly used "magic" value for debugging purposes.
+
+The C payload defines a `magic_value` variable with the same value (`0xDEADBEEF`). It then assumes that the `read_magic_value` is read from some configuration file or device and sets it to the same value (`0xDEADBEEF`) for demonstration purposes.
+
+The payload compares the `read_magic_value` with the `magic_value`. If they match, it prints "matched"; otherwise, it prints "not matched".
+
+Note that in a real scenario, the `read_magic_value` would be obtained from the actual device or configuration file, rather than being hard-coded.
