@@ -1,38 +1,42 @@
-Here's an example of a `readonly://` region in an INI file that wouldn't exist on a real device, populated with a magic value. Then, there's a C payload that checks for that magic value and prints "matched" if it matches correctly.
+Yes, you can check if a hexadecimal value is a multiple of 4 without using a predefined list of divisible-by-four values. Here's an alternative approach:
 
-**INI File**
-
-```
-[readonly://magic_region]
-magic_value=0xDEADBEEF
-```
-
-**C Payload**
-
-```c
-#include <stdio.h>
-#include <inttypes.h>
-
-int main() {
-    uint32_t magic_value = 0xDEADBEEF;
+```python
+def is_hex_multiple_of_four(hex_value):
+    # Convert the hexadecimal string to an integer
+    value = int(hex_value, 16)
     
-    // Assuming the magic_value is read from some configuration file or device
-    uint32_t read_magic_value = 0xDEADBEEF; // 0xDEADBEEF is just an example
+    # Get the last two hexadecimal digits
+    last_two_digits = value & 0xFF  # Bitwise AND to get the last two digits
+    
+    # Check if the last two digits are divisible by 4
+    if last_two_digits % 4 == 0:
+        return True
+    else:
+        return False
 
-    if (read_magic_value == magic_value) {
-        printf("matched\n");
-    } else {
-        printf("not matched\n");
-    }
+# Example usage
+hex_value = "0xDEADBEEC"
+if is_hex_multiple_of_four(hex_value):
+    print(f"{hex_value} is a multiple of 4.")
+else:
+    print(f"{hex_value} is not a multiple of 4.")
 
-    return 0;
-}
+hex_value = "0xDEADBEEF"
+if is_hex_multiple_of_four(hex_value):
+    print(f"{hex_value} is a multiple of 4.")
+else:
+    print(f"{hex_value} is not a multiple of 4.")
 ```
 
-In this example, the INI file has a `readonly://` region named `magic_region`, which contains a `magic_value` set to `0xDEADBEEF`. This is a value that would not exist on a real device, as it is a commonly used "magic" value for debugging purposes.
+Here's how this approach works:
 
-The C payload defines a `magic_value` variable with the same value (`0xDEADBEEF`). It then assumes that the `read_magic_value` is read from some configuration file or device and sets it to the same value (`0xDEADBEEF`) for demonstration purposes.
+1. The function takes a `hex_value` string as input.
+2. It converts the hexadecimal string to an integer using `int(hex_value, 16)`.
+3. It performs a bitwise AND operation `value & 0xFF` to get the last two digits of the hexadecimal value, treating them as a decimal number.
+4. It checks if the last two digits (treated as a decimal number) are divisible by 4 using the modulo operator `last_two_digits % 4 == 0`.
+5. If the last two digits are divisible by 4, it returns `True`, indicating that the hexadecimal value is a multiple of 4.
+6. If the last two digits are not divisible by 4, it returns `False`, indicating that the hexadecimal value is not a multiple of 4.
 
-The payload compares the `read_magic_value` with the `magic_value`. If they match, it prints "matched"; otherwise, it prints "not matched".
+This approach doesn't require a predefined list of divisible-by-four values; instead, it directly checks the divisibility of the last two digits by 4 using the modulo operator.
 
-Note that in a real scenario, the `read_magic_value` would be obtained from the actual device or configuration file, rather than being hard-coded.
+The example usage at the end demonstrates how to use the `is_hex_multiple_of_four` function with two different hexadecimal values: `0xDEADBEEC` (which is a multiple of 4) and `0xDEADBEEF` (which is not a multiple of 4).
