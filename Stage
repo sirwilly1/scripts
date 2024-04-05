@@ -1,0 +1,38 @@
+Here's a Python script that accomplishes what you described:
+
+```python
+import struct
+from scapy.all import IP, UDP, send
+
+def split_payload(payload_file, packet_size, destination_ip, destination_port):
+    with open(payload_file, 'rb') as file:
+        payload = file.read()
+    
+    packets = [payload[i:i+packet_size] for i in range(0, len(payload), packet_size)]
+    
+    for i, packet_data in enumerate(packets):
+        packet = IP(dst=destination_ip)/UDP(dport=destination_port)/packet_data
+        send(packet, verbose=False)
+        print(f"Sent packet {i+1}/{len(packets)}")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Split payload into packets and send them to specified destination.')
+    parser.add_argument('payload_file', type=str, help='Path to the payload bin file')
+    parser.add_argument('packet_size', type=int, help='Size of the packets')
+    parser.add_argument('destination_ip', type=str, help='Destination IP address')
+    parser.add_argument('destination_port', type=int, help='Destination port')
+    
+    args = parser.parse_args()
+    
+    split_payload(args.payload_file, args.packet_size, args.destination_ip, args.destination_port)
+```
+
+To use this script, save it in a Python file (e.g., `payload_splitter.py`) and run it from the command line like this:
+
+```
+python payload_splitter.py payload.bin 1000 192.168.1.100 1234
+```
+
+Replace `payload.bin` with the path to your payload bin file, `1000` with the size of the packets you want to send, `192.168.1.100` with the destination IP address, and `1234` with the destination port number.
