@@ -139,3 +139,33 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     split_payload(args.payload_file, args.packet_size, args.destination_ip, args.destination_port)
+
+
+
+-------
+
+from scapy.all import sniff
+
+def print_received_packet(packet):
+    if packet.haslayer("Raw"):
+        data = packet["Raw"].load
+        print(f"Received data: {data}")
+
+def receive_data(protocol, port):
+    if protocol.lower() == "tcp":
+        sniff(filter=f"tcp port {port}", prn=print_received_packet)
+    elif protocol.lower() == "udp":
+        sniff(filter=f"udp port {port}", prn=print_received_packet)
+    else:
+        print("Unsupported protocol. Please specify either 'tcp' or 'udp'.")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Receive and print out data.')
+    parser.add_argument('protocol', type=str, help='Protocol to listen for (TCP or UDP)')
+    parser.add_argument('port', type=int, help='Port to listen on')
+    
+    args = parser.parse_args()
+    
+    receive_data(args.protocol, args.port)
