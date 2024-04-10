@@ -169,3 +169,37 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     receive_data(args.protocol, args.port)
+
+----------
+
+import socket
+
+def main():
+    # Define the host and port to listen on
+    host = 'localhost'  # You can change this to your desired host
+    port = 12345  # Change this to the desired port number
+    offset = 5  # Change this to the desired offset value
+
+    # Create a socket object
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        # Bind the socket to the host and port
+        s.bind((host, port))
+        print(f"Listening on {host}:{port}")
+
+        # Flag to track if it's the first packet
+        first_packet = True
+
+        # Continuously listen for incoming packets
+        while True:
+            # Receive data from the socket
+            data, addr = s.recvfrom(1024)  # Buffer size is 1024 bytes
+            
+            if first_packet:
+                print(f"Received packet from {addr}: {data[offset:].decode()}")
+                first_packet = False
+            else:
+                print(f"Received data packet from {addr}: {data.decode()}")
+
+if __name__ == "__main__":
+    main()
+
