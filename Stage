@@ -104,3 +104,38 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     split_payload(args.payload_file, args.packet_size, args.destination_ip, args.destination_port)
+
+
+
+
+
+--------
+import struct
+from scapy.all import IP, UDP, send
+
+def split_payload(payload_file, packet_size, destination_ip, destination_port):
+    with open(payload_file, 'rb') as file:
+        payload = file.read()
+    
+    packets_hex = [payload[i:i+packet_size].hex() for i in range(0, len(payload), packet_size)]
+    
+    for i, packet_hex in enumerate(packets_hex):
+        header = struct.pack("!I", i)  # Convert packet index to 4-byte integer
+        packet = IP(dst=destination_ip, proto=17)/UDP(dport=destination_port)/header + bytes.fromhex(packet_hex)
+        print(f"Packet {i+1} data (hex): {packet_hex}")
+        print(f"Packet {i+1}: {packet.summary()}")
+        send(packet, verbose=False)
+        print(f"Sent packet {i+1}/{len(packets_hex)}")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Split payload into packets and send them to specified destination.')
+    parser.add_argument('payload_file', type=str, help='Path to the payload bin file')
+    parser.add_argument('packet_size', type=int, help='Size of the packets')
+    parser.add_argument('destination_ip', type=str, help='Destination IP address')
+    parser.add_argument('destination_port', type=int, help='Destination port')
+    
+    args = parser.parse_args()
+    
+    split_payload(args.payload_file, args.packet_size, args.destination_ip, args.destination_port)
