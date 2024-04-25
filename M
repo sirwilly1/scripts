@@ -38,3 +38,47 @@ with open(args.output_file, 'w', newline='') as csv_file:
 
 --------
 python script.py data.txt output.csv --substring "abc"
+
+
+
+------------
+from scapy.all import *
+import csv
+import argparse
+
+def perform_snmp_walk(host, oid):
+    result = []
+
+    while True:
+        response = sr1(IP(dst=host)/UDP(sport=RandShort(), dport=161)/SNMP(community='public', PDU=SNMPnext(varbindlist=[SNMPvarbind(oid=ASN1_OID(oid))])), timeout=1, verbose=False)
+
+        if response and response.haslayer(SNMP):
+            varbind = response[SNMP].varbinds[0]
+            if varbind.oid == ASN1_OID(oid):  # Check if we reached the end
+                break
+            result.append(f"{varbind.oid}: {varbind.value}")
+            oid = varbind.oid
+        else:
+            break
+
+    return result
+
+def snmp_walk_from_csv(csv_file):
+    with open(csv_file, 'r') as file:
+        reader = csv.reader(file)
+        next(reader)  # Skip header
+        for row in reader:
+            name, oid = row
+            print(f"SNMP walk for {name} ({oid}):")
+            result = perform_snmp_walk('localhost', oid)  # Replace 'localhost' with your SNMP server IP
+            if result:
+                for item in result:
+                    print(item)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Perform SNMP walk using data from a CSV file.')
+    parser.add_argument('csv_file', help='path to the CSV file containing names and OIDs')
+
+    args = parser.parse_args()
+
+    snmp_walk_from_csv(args.csv_file)
