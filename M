@@ -82,3 +82,41 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     snmp_walk_from_csv(args.csv_file)
+---------
+
+import csv
+import argparse
+
+def filter_names(data, substring):
+    filtered_data = [line for line in data if substring in line.split()[0]]
+    return filtered_data
+
+parser = argparse.ArgumentParser(description='Process text file and convert it into a CSV.')
+parser.add_argument('input_file', help='path to the input text file')
+parser.add_argument('output_file', help='path to the output CSV file')
+parser.add_argument('--substring', help='substring to filter names', default=None)
+parser.add_argument('--disable-substring', action='store_true', help='disable substring filtering')
+
+args = parser.parse_args()
+
+# Open the text file
+with open(args.input_file, 'r') as file:
+    lines = file.readlines()
+
+# Filter names if substring is provided and the flag is not enabled
+if args.substring and not args.disable_substring:
+    lines = filter_names(lines, args.substring)
+
+# Open CSV file for writing
+with open(args.output_file, 'w', newline='') as csv_file:
+    writer = csv.writer(csv_file)
+
+    # Write header
+    writer.writerow(['Name', 'OID'])
+
+    # Process each line
+    for line in lines:
+        # Split the line into name and OID, removing '<' and '>'
+        name, oid = line.strip().split()
+        oid = oid.strip('<>')  # Remove angle brackets
+        writer.writerow([name, oid])
