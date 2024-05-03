@@ -1,27 +1,56 @@
-Ascii    Unicode
-A          U+0410
-B          U+0392
-C          U+0421
-D          U+0402
-E          U+0415
-F          U+0424
-G          U+0413
-H          U+0425
-I          U+0406
-J          U+0408
-K          U+041A
-L          U+041B
-M          U+041C
-N          U+041D
-O          U+041E
-P          U+0420
-Q          U+040A
-R          U+0420
-S          U+0405
-T          U+0422
-U          U+0423
-V          U+0412
+Ascii    Unicode     Character Name
+a          U+0430     CYRILLIC SMALL LETTER A
+b          U+0432     CYRILLIC SMALL LETTER VE
+c          U+0441     CYRILLIC SMALL LETTER ES
+d          U+0501     CYRILLIC SMALL LETTER KOMI DE
+e          U+0435     CYRILLIC SMALL LETTER IE
+f          U+0473     CYRILLIC SMALL LETTER FITA
+g          U+0433     CYRILLIC SMALL LETTER GHE
+h          U+043D     CYRILLIC SMALL LETTER EN
+i          U+0456     CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I
+j          U+0458     CYRILLIC SMALL LETTER JE
+k          U+043A     CYRILLIC SMALL LETTER KA
+l          U+043B     CYRILLIC SMALL LETTER EL
+m          U+043C     CYRILLIC SMALL LETTER EM
+n          U+043D     CYRILLIC SMALL LETTER EN
+o          U+043E     CYRILLIC SMALL LETTER O
+p          U+0440     CYRILLIC SMALL LETTER ER
+q         (No direct equivalent)
+r          U+0440     CYRILLIC SMALL LETTER ER
+s          U+0455     CYRILLIC SMALL LETTER DZE
+t          U+0442     CYRILLIC SMALL LETTER TE
+u          U+0443     CYRILLIC SMALL LETTER U
+v          U+0432     CYRILLIC SMALL LETTER VE
+w         (No direct equivalent)
+x          U+0445     CYRILLIC SMALL LETTER HA
+y          U+044B     CYRILLIC SMALL LETTER YERU
+z          U+0437     CYRILLIC SMALL LETTER ZE
+
+
+Ascii    Unicode     Character Name
+A          U+0391     GREEK CAPITAL LETTER ALPHA
+B          U+0412     CYRILLIC CAPITAL LETTER VE
+C          U+0421     CYRILLIC CAPITAL LETTER ES
+D          U+0500     CYRILLIC CAPITAL LETTER KOMI DE
+E          U+0415     CYRILLIC CAPITAL LETTER IE
+F          U+0406     CYRILLIC CAPITAL LETTER BYELORUSSIAN-UKRAINIAN I
+G          U+050C     CYRILLIC CAPITAL LETTER KOMI DJE
+H          U+041D     CYRILLIC CAPITAL LETTER EN
+I          U+0406     CYRILLIC CAPITAL LETTER BYELORUSSIAN-UKRAINIAN I
+J          U+0408     CYRILLIC CAPITAL LETTER JE
+K          U+041A     CYRILLIC CAPITAL LETTER KA
+L          U+041B     CYRILLIC CAPITAL LETTER EL
+M          U+041C     CYRILLIC CAPITAL LETTER EM
+N          U+041D     CYRILLIC CAPITAL LETTER EN
+O          U+041E     CYRILLIC CAPITAL LETTER O
+P          U+0420     CYRILLIC CAPITAL LETTER ER
+Q         (No direct equivalent)
+R          U+0420     CYRILLIC CAPITAL LETTER ER
+S          U+0405     CYRILLIC CAPITAL LETTER DZE
+T          U+0422     CYRILLIC CAPITAL LETTER TE
+U          U+0423     CYRILLIC CAPITAL LETTER U
+V          U+0412     CYRILLIC CAPITAL LETTER VE
 W         (No direct equivalent)
-X          U+0425
-Y          U+042B
-Z          U+0417
+X          U+0425     CYRILLIC CAPITAL LETTER HA
+Y          U+042B     CYRILLIC CAPITAL LETTER YERU
+Z          U+0417     CYRILLIC CAPITAL LETTER ZE
