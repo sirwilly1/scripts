@@ -1,0 +1,132 @@
+To stream a video between two Debian VMs on the same network using Netcat and VLC, follow these steps:
+
+### Sender Side (VM1)
+
+1. **Install VLC and Netcat:**
+
+   ```bash
+   sudo apt update
+   sudo apt install vlc netcat
+   ```
+
+2. **Stream Video Using VLC:**
+
+   Open VLC and follow these steps:
+   - Go to `Media` -> `Stream`.
+   - Add the video file you want to stream.
+   - Click `Stream`, then `Next`.
+   - Choose `Stream to Network`, then `Next`.
+   - In the `New Destination` section, select `File` and click `Add`.
+   - Set the `File` destination path to a named pipe. For example, `/tmp/videostream`.
+   - Check `Activate Transcoding` if necessary, and choose a profile.
+   - Click `Next` and then `Stream`.
+
+   Alternatively, you can use the command line:
+
+   ```bash
+   mkfifo /tmp/videostream
+   cvlc /path/to/video/file --sout '#standard{access=file,mux=ts,dst=/tmp/videostream}' &
+   ```
+
+3. **Stream with Netcat:**
+
+   ```bash
+   cat /tmp/videostream | nc -u [receiver_vm_ip] [port]
+   ```
+
+### Receiver Side (VM2)
+
+1. **Install VLC and Netcat:**
+
+   ```bash
+   sudo apt update
+   sudo apt install vlc netcat
+   ```
+
+2. **Receive Stream with Netcat:**
+
+   ```bash
+   nc -l -u [port] | cvlc -
+   ```
+
+Replace `[receiver_vm_ip]` with the IP address of the receiving VM, and `[port]` with the port number you wish to use (e.g., 1234).
+
+### Example Commands
+
+#### Sender Side (VM1):
+
+```bash
+mkfifo /tmp/videostream
+cvlc /path/to/video/file --sout '#standard{access=file,mux=ts,dst=/tmp/videostream}' &
+cat /tmp/videostream | nc -u 192.168.1.2 1234
+```
+
+#### Receiver Side (VM2):
+
+```bash
+nc -l -u 1234 | cvlc -
+```
+
+This setup uses UDP (`-u` flag for Netcat) for the stream. Adjust the IP addresses and port numbers as per your network configuration.
+
+
+
+-------------
+Sure, here is an example using a file called `cats.mp4`.
+
+### Sender Side (VM1)
+
+1. **Install VLC and Netcat:**
+
+   ```bash
+   sudo apt update
+   sudo apt install vlc netcat
+   ```
+
+2. **Create a named pipe and stream the video using VLC:**
+
+   ```bash
+   mkfifo /tmp/videostream
+   cvlc /path/to/cats.mp4 --sout '#standard{access=file,mux=ts,dst=/tmp/videostream}' &
+   ```
+
+3. **Stream with Netcat:**
+
+   Replace `[receiver_vm_ip]` with the IP address of the receiving VM, for example, `192.168.1.2`, and use port `1234`.
+
+   ```bash
+   cat /tmp/videostream | nc -u 192.168.1.2 1234
+   ```
+
+### Receiver Side (VM2)
+
+1. **Install VLC and Netcat:**
+
+   ```bash
+   sudo apt update
+   sudo apt install vlc netcat
+   ```
+
+2. **Receive the stream with Netcat and play it using VLC:**
+
+   ```bash
+   nc -l -u 1234 | cvlc -
+   ```
+
+### Example Commands
+
+#### Sender Side (VM1):
+
+```bash
+mkfifo /tmp/videostream
+cvlc /path/to/cats.mp4 --sout '#standard{access=file,mux=ts,dst=/tmp/videostream}' &
+cat /tmp/videostream | nc -u 192.168.1.2 1234
+```
+
+#### Receiver Side (VM2):
+
+```bash
+nc -l -u 1234 | cvlc -
+```
+
+This example uses `cats.mp4` as the video file to be streamed from the sender VM (VM1) to the receiver VM (VM2) over the network using UDP. Adjust the file paths, IP addresses, and port numbers as necessary for your specific setup.
