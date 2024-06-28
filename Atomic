@@ -47,3 +47,67 @@ If you can't find the exact file or the setting within the configuration files, 
    Refer to the game's documentation or community forums for specific guidance on modifying game settings.
 
 Remember to back up any files before making changes, so you can restore them if something goes wrong.
+
+
+
+---------------
+If you installed Atomic Tanks from the App Store (or using a package manager like `apt`) on Debian, the game files are typically located in standard system directories. Here's where you might find them:
+
+1. **Binary and Executables:**
+   The main executable binary is usually located in `/usr/games` or `/usr/local/games`.
+
+2. **Game Data and Configuration:**
+   Game data files and configuration settings are often located in:
+   - `/usr/share/games/atanks/`
+   - `/usr/local/share/games/atanks/`
+
+3. **User-Specific Configuration:**
+   User-specific configuration files are often stored in hidden directories within your home directory. Check:
+   - `~/.atanks/`
+   - `~/.config/atanks/`
+
+Here are the steps to find and modify the game files:
+
+### Step-by-Step Guide
+
+1. **Open Terminal:**
+   Open your terminal application.
+
+2. **Locate the Game Directory:**
+   Try to navigate to one of the directories mentioned above. Start with:
+   ```bash
+   cd /usr/share/games/atanks/
+   ```
+   If this directory does not exist, try:
+   ```bash
+   cd /usr/local/share/games/atanks/
+   ```
+
+3. **List Files:**
+   List the files in the directory to see if you can find configuration files:
+   ```bash
+   ls
+   ```
+
+4. **Edit Configuration Files:**
+   If you find a configuration file like `config.cfg`, `settings.cfg`, or similar, open it with a text editor. For example:
+   ```bash
+   sudo nano config.cfg
+   ```
+   Modify the money-related settings as described previously.
+
+5. **Check User-Specific Configurations:**
+   If you don't find the relevant files in the system directories, check the user-specific configurations:
+   ```bash
+   cd ~/.atanks/
+   ```
+   or
+   ```bash
+   cd ~/.config/atanks/
+   ```
+   Again, list the files and look for any configuration files to edit.
+
+6. **Modify and Save:**
+   Once you find the correct file, modify the values to increase the money, save the changes, and restart the game to see if the changes have taken effect.
+
+If you can't find any configuration files in these locations, it's possible that the settings are stored in a different format or location. In such cases, checking the game's documentation or community forums for specific instructions on modifying game settings would be the next best step.
