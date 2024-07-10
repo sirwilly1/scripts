@@ -1,0 +1,68 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+// Define the structure for a linked list node
+typedef struct Node {
+    int data;
+    struct Node* next;
+} Node;
+
+// Function to create a new node
+Node* createNode(int data) {
+    Node* newNode = (Node*)malloc(sizeof(Node));
+    if (!newNode) {
+        printf("Memory error\n");
+        return NULL;
+    }
+    newNode->data = data;
+    newNode->next = NULL;
+    return newNode;
+}
+
+// Function to insert a node at the end of the list
+void insertNode(Node** head, int data) {
+    Node* newNode = createNode(data);
+    if (*head == NULL) {
+        *head = newNode;
+    } else {
+        Node* temp = *head;
+        while (temp->next != NULL) {
+            temp = temp->next;
+        }
+        temp->next = newNode;
+    }
+}
+
+// Function to create a linked list from a byte array
+void createLinkedListFromByteArray(Node** head, unsigned char* byteArray, int size) {
+    for (int i = 0; i < size; ++i) {
+        insertNode(head, byteArray[i]);
+    }
+}
+
+// Function to print the linked list
+void printLinkedList(Node* head) {
+    Node* temp = head;
+    while (temp != NULL) {
+        printf("%d -> ", temp->data);
+        temp = temp->next;
+    }
+    printf("NULL\n");
+}
+
+int main() {
+    // Example byte array
+    unsigned char byteArray[] = {10, 20, 30, 40, 50};
+    int size = sizeof(byteArray) / sizeof(byteArray[0]);
+
+    // Initialize the head of the linked list
+    Node* head = NULL;
+
+    // Create linked list from byte array
+    createLinkedListFromByteArray(&head, byteArray, size);
+
+    // Print the linked list
+    printLinkedList(head);
+
+    return 0;
+}
