@@ -1,0 +1,98 @@
+Here's the YAML file for PC builds and the corresponding C code with a struct, linked list, and initialization function:
+
+### YAML File (pc_builds.yaml)
+```yaml
+builds:
+  - build: 1
+    cpu: "Intel Core i7-13700K"
+    gpu: "NVIDIA GeForce RTX 4070"
+    cost: 1200
+  - build: 2
+    cpu: "AMD Ryzen 9 7900X"
+    gpu: "AMD Radeon RX 7900 XT"
+    cost: 1100
+  - build: 3
+    cpu: "Intel Core i9-13900K"
+    gpu: "NVIDIA GeForce RTX 4090"
+    cost: 2500
+  - build: 4
+    cpu: "AMD Ryzen 7 7700X"
+    gpu: "NVIDIA GeForce RTX 3070"
+    cost: 900
+```
+
+### C Code
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct PCBuild {
+    int build_number;
+    char cpu[50];
+    char gpu[50];
+    int cost;
+    struct PCBuild *next;
+} PCBuild;
+
+void initialize_list(PCBuild **head) {
+    // Manually initializing the list based on the YAML file
+    *head = malloc(sizeof(PCBuild));
+    (*head)->build_number = 1;
+    strcpy((*head)->cpu, "Intel Core i7-13700K");
+    strcpy((*head)->gpu, "NVIDIA GeForce RTX 4070");
+    (*head)->cost = 1200;
+    (*head)->next = malloc(sizeof(PCBuild));
+
+    PCBuild *current = (*head)->next;
+    current->build_number = 2;
+    strcpy(current->cpu, "AMD Ryzen 9 7900X");
+    strcpy(current->gpu, "AMD Radeon RX 7900 XT");
+    current->cost = 1100;
+    current->next = malloc(sizeof(PCBuild));
+
+    current = current->next;
+    current->build_number = 3;
+    strcpy(current->cpu, "Intel Core i9-13900K");
+    strcpy(current->gpu, "NVIDIA GeForce RTX 4090");
+    current->cost = 2500;
+    current->next = malloc(sizeof(PCBuild));
+
+    current = current->next;
+    current->build_number = 4;
+    strcpy(current->cpu, "AMD Ryzen 7 7700X");
+    strcpy(current->gpu, "NVIDIA GeForce RTX 3070");
+    current->cost = 900;
+    current->next = NULL;
+}
+
+void print_list(PCBuild *head) {
+    PCBuild *current = head;
+    while (current != NULL) {
+        printf("Build %d:\n", current->build_number);
+        printf("  CPU: %s\n", current->cpu);
+        printf("  GPU: %s\n", current->gpu);
+        printf("  Cost: $%d\n\n", current->cost);
+        current = current->next;
+    }
+}
+
+int main() {
+    PCBuild *head = NULL;
+    initialize_list(&head);
+    print_list(head);
+
+    // Free the allocated memory
+    PCBuild *current = head;
+    PCBuild *next = NULL;
+    while (current != NULL) {
+        next = current->next;
+        free(current);
+        current = next;
+    }
+
+    return 0;
+}
+```
+
+This C code includes a struct for the PC build values and a linked list to iterate through them. The `initialize_list` function manually sets up the linked list based on the provided YAML file. The `print_list` function iterates through the list and prints out the details of each build. Make sure to update the YAML file and initialization function if you add or modify builds.
