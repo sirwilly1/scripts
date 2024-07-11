@@ -1,28 +1,3 @@
-Here's the YAML file for PC builds and the corresponding C code with a struct, linked list, and initialization function:
-
-### YAML File (pc_builds.yaml)
-```yaml
-builds:
-  - build: 1
-    cpu: "Intel Core i7-13700K"
-    gpu: "NVIDIA GeForce RTX 4070"
-    cost: 1200
-  - build: 2
-    cpu: "AMD Ryzen 9 7900X"
-    gpu: "AMD Radeon RX 7900 XT"
-    cost: 1100
-  - build: 3
-    cpu: "Intel Core i9-13900K"
-    gpu: "NVIDIA GeForce RTX 4090"
-    cost: 2500
-  - build: 4
-    cpu: "AMD Ryzen 7 7700X"
-    gpu: "NVIDIA GeForce RTX 3070"
-    cost: 900
-```
-
-### C Code
-```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,59 +7,63 @@ typedef struct PCBuild {
     char cpu[50];
     char gpu[50];
     int cost;
-    struct PCBuild *next;
 } PCBuild;
 
-void initialize_list(PCBuild **head) {
-    // Manually initializing the list based on the YAML file
-    *head = malloc(sizeof(PCBuild));
-    (*head)->build_number = 1;
-    strcpy((*head)->cpu, "Intel Core i7-13700K");
-    strcpy((*head)->gpu, "NVIDIA GeForce RTX 4070");
-    (*head)->cost = 1200;
-    (*head)->next = malloc(sizeof(PCBuild));
+typedef struct _listEntry_t {
+    PCBuild listParams;
+    struct _listEntry_t *next;
+} listEntry_t;
 
-    PCBuild *current = (*head)->next;
-    current->build_number = 2;
-    strcpy(current->cpu, "AMD Ryzen 9 7900X");
-    strcpy(current->gpu, "AMD Radeon RX 7900 XT");
-    current->cost = 1100;
-    current->next = malloc(sizeof(PCBuild));
+void initialize_list(listEntry_t **head) {
+    PCBuild builds[] = {
+        {1, "Intel Core i7-13700K", "NVIDIA GeForce RTX 4070", 1200},
+        {2, "AMD Ryzen 9 7900X", "AMD Radeon RX 7900 XT", 1100},
+        {3, "Intel Core i9-13900K", "NVIDIA GeForce RTX 4090", 2500},
+        {4, "AMD Ryzen 7 7700X", "NVIDIA GeForce RTX 3070", 900}
+    };
+    
+    int num_builds = sizeof(builds) / sizeof(builds[0]);
 
-    current = current->next;
-    current->build_number = 3;
-    strcpy(current->cpu, "Intel Core i9-13900K");
-    strcpy(current->gpu, "NVIDIA GeForce RTX 4090");
-    current->cost = 2500;
-    current->next = malloc(sizeof(PCBuild));
+    *head = NULL;
+    listEntry_t *current = NULL;
 
-    current = current->next;
-    current->build_number = 4;
-    strcpy(current->cpu, "AMD Ryzen 7 7700X");
-    strcpy(current->gpu, "NVIDIA GeForce RTX 3070");
-    current->cost = 900;
-    current->next = NULL;
+    for (int i = 0; i < num_builds; i++) {
+        listEntry_t *new_entry = (listEntry_t *)malloc(sizeof(listEntry_t));
+        if (!new_entry) {
+            perror("Failed to allocate memory");
+            exit(EXIT_FAILURE);
+        }
+        new_entry->listParams = builds[i];
+        new_entry->next = NULL;
+
+        if (*head == NULL) {
+            *head = new_entry;
+        } else {
+            current->next = new_entry;
+        }
+        current = new_entry;
+    }
 }
 
-void print_list(PCBuild *head) {
-    PCBuild *current = head;
+void print_list(listEntry_t *head) {
+    listEntry_t *current = head;
     while (current != NULL) {
-        printf("Build %d:\n", current->build_number);
-        printf("  CPU: %s\n", current->cpu);
-        printf("  GPU: %s\n", current->gpu);
-        printf("  Cost: $%d\n\n", current->cost);
+        printf("Build %d:\n", current->listParams.build_number);
+        printf("  CPU: %s\n", current->listParams.cpu);
+        printf("  GPU: %s\n", current->listParams.gpu);
+        printf("  Cost: $%d\n\n", current->listParams.cost);
         current = current->next;
     }
 }
 
 int main() {
-    PCBuild *head = NULL;
+    listEntry_t *head = NULL;
     initialize_list(&head);
     print_list(head);
 
     // Free the allocated memory
-    PCBuild *current = head;
-    PCBuild *next = NULL;
+    listEntry_t *current = head;
+    listEntry_t *next = NULL;
     while (current != NULL) {
         next = current->next;
         free(current);
@@ -93,6 +72,3 @@ int main() {
 
     return 0;
 }
-```
-
-This C code includes a struct for the PC build values and a linked list to iterate through them. The `initialize_list` function manually sets up the linked list based on the provided YAML file. The `print_list` function iterates through the list and prints out the details of each build. Make sure to update the YAML file and initialization function if you add or modify builds.
