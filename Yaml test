@@ -72,3 +72,82 @@ int main() {
 
     return 0;
 }
+
+
+
+-------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct PCBuild {
+    int build_number;
+    char cpu[50];
+    char gpu[50];
+    int cost;
+} PCBuild;
+
+typedef struct _listEntry_t {
+    PCBuild listParams;
+    struct _listEntry_t *next;
+} listEntry_t;
+
+void initialize_list_from_binary(listEntry_t **head, const char *filename) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Failed to open file");
+        exit(EXIT_FAILURE);
+    }
+
+    *head = NULL;
+    listEntry_t *current = NULL;
+
+    PCBuild build;
+    while (fread(&build, sizeof(PCBuild), 1, file)) {
+        listEntry_t *new_entry = (listEntry_t *)malloc(sizeof(listEntry_t));
+        if (!new_entry) {
+            perror("Failed to allocate memory");
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+        new_entry->listParams = build;
+        new_entry->next = NULL;
+
+        if (*head == NULL) {
+            *head = new_entry;
+        } else {
+            current->next = new_entry;
+        }
+        current = new_entry;
+    }
+
+    fclose(file);
+}
+
+void print_list(listEntry_t *head) {
+    listEntry_t *current = head;
+    while (current != NULL) {
+        printf("Build %d:\n", current->listParams.build_number);
+        printf("  CPU: %.50s\n", current->listParams.cpu);
+        printf("  GPU: %.50s\n", current->listParams.gpu);
+        printf("  Cost: $%d\n\n", current->listParams.cost);
+        current = current->next;
+    }
+}
+
+int main() {
+    listEntry_t *head = NULL;
+    initialize_list_from_binary(&head, "pc_builds.bin");
+    print_list(head);
+
+    // Free the allocated memory
+    listEntry_t *current = head;
+    listEntry_t *next = NULL;
+    while (current != NULL) {
+        next = current->next;
+        free(current);
+        current = next;
+    }
+
+    return 0;
+}
