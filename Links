@@ -99,3 +99,163 @@ To turn the `_Build_t` struct into a linked list, you need to define another str
    ```
 
 This code defines a `Node` struct that represents a node in the linked list, with each node containing a `Build_t` struct and a pointer to the next node. The `createNode` function creates a new node, `appendNode` adds a node to the end of the list, and `printList` prints the contents of the linked list. The `main` function demonstrates how to initialize the list, add nodes, print the list, and free the allocated memory.
+
+
+------------
+In the context of your question, "hooking" can have different meanings depending on the specific application or domain. In general, "hooking" refers to a technique where you intercept or modify the behavior of a program or system. Here are a few common contexts in which hooking is used:
+
+1. **Function Hooking**: Intercepting calls to a specific function in a program to modify its behavior. This is often used in software debugging, profiling, and security.
+
+2. **Event Hooking**: Intercepting events in a program or operating system. For example, in Windows programming, you can hook into the message loop to intercept window messages.
+
+3. **Library/Module Hooking**: Replacing or modifying the behavior of functions within a dynamic library (e.g., DLLs in Windows).
+
+4. **Data Hooking**: Intercepting or modifying data as it is being processed or transferred within a system. This is often used in network monitoring and security.
+
+In the context of your original question, if you meant "hooking" in relation to linked lists and structs in C, it might imply:
+
+### Linked List Hooking
+This typically means adding new nodes to a linked list and possibly modifying or reading existing nodes. Here's how you can visualize this in code:
+
+1. **Adding Nodes to a Linked List** (Hooking into the list):
+
+   ```c
+   // Function to create a new node and "hook" it into the list
+   void appendNode(struct Node** head_ref, Build_t new_data) {
+       struct Node* new_node = createNode(new_data);
+       struct Node* last = *head_ref;
+
+       if (*head_ref == NULL) {
+           *head_ref = new_node;
+           return;
+       }
+
+       while (last->next != NULL) {
+           last = last->next;
+       }
+
+       last->next = new_node;
+   }
+   ```
+
+2. **Reading Nodes from a Linked List** (Reading the hook):
+
+   ```c
+   // Function to read all nodes in the list
+   void printList(struct Node* node) {
+       while (node != NULL) {
+           printf("Build: %d\n", node->data.build);
+           printf("CPU: %s\n", node->data.cpu);
+           printf("GPU: %s\n", node->data.gpu);
+           printf("Cost: $%d\n", node->data.cost);
+           printf("\n");
+           node = node->next;
+       }
+   }
+   ```
+
+### Example Code
+Combining these, the complete code to append (hook) data into a linked list and read from it looks like this:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct _Build_t {
+    int build;
+    char cpu[50];
+    char gpu[50];
+    int cost;
+};
+
+typedef struct _Build_t Build_t;
+
+struct Node {
+    Build_t data;
+    struct Node* next;
+};
+
+// Function to create a new node
+struct Node* createNode(Build_t data) {
+    struct Node* newNode = (struct Node*)malloc(sizeof(struct Node));
+    if (!newNode) {
+        fprintf(stderr, "Memory allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+    newNode->data = data;
+    newNode->next = NULL;
+    return newNode;
+}
+
+// Function to append a node to the end of the list
+void appendNode(struct Node** head_ref, Build_t new_data) {
+    struct Node* new_node = createNode(new_data);
+    struct Node* last = *head_ref;
+
+    if (*head_ref == NULL) {
+        *head_ref = new_node;
+        return;
+    }
+
+    while (last->next != NULL) {
+        last = last->next;
+    }
+
+    last->next = new_node;
+}
+
+// Function to print the linked list
+void printList(struct Node* node) {
+    while (node != NULL) {
+        printf("Build: %d\n", node->data.build);
+        printf("CPU: %s\n", node->data.cpu);
+        printf("GPU: %s\n", node->data.gpu);
+        printf("Cost: $%d\n", node->data.cost);
+        printf("\n");
+        node = node->next;
+    }
+}
+
+// Function to free the linked list
+void freeList(struct Node* head) {
+    struct Node* temp;
+    while (head != NULL) {
+        temp = head;
+        head = head->next;
+        free(temp);
+    }
+}
+
+int main() {
+    // Initialize the head of the list
+    struct Node* head = NULL;
+
+    // Define the build data
+    Build_t builds[] = {
+        {1, "Intel Core i7-13700K", "NVIDIA GeForce RTX 4070", 1200},
+        {2, "AMD Ryzen 9 7900X", "AMD Radeon RX 7900 XT", 1100},
+        {3, "Intel Core i9-13900K", "NVIDIA GeForce RTX 4090", 2500},
+        {4, "AMD Ryzen 7 7700X", "NVIDIA GeForce RTX 3070", 900}
+    };
+
+    // Add builds to the linked list
+    int numBuilds = sizeof(builds) / sizeof(builds[0]);
+    for (int i = 0; i < numBuilds; i++) {
+        appendNode(&head, builds[i]);
+    }
+
+    // Print the linked list
+    printList(head);
+
+    // Free the allocated memory
+    freeList(head);
+
+    return 0;
+}
+```
+
+In this code:
+- **appendNode** is used to add new nodes (hook into the list).
+- **printList** is used to read and print the data from each node.
+- **freeList** is used to free the memory allocated for the linked list nodes.
