@@ -1,0 +1,101 @@
+To turn the `_Build_t` struct into a linked list, you need to define another struct that includes a pointer to the next node in the list. Here’s how you can do it:
+
+1. **Define the linked list node struct:**
+   This struct will include a `_Build_t` data field and a pointer to the next node.
+
+   ```c
+   #include <stdio.h>
+   #include <stdlib.h>
+   #include <string.h>
+
+   struct _Build_t {
+       int build;
+       char cpu[50];
+       char gpu[50];
+       int cost;
+   };
+
+   typedef struct _Build_t Build_t;
+
+   struct Node {
+       Build_t data;
+       struct Node* next;
+   };
+   ```
+
+2. **Functions to create and print the linked list:**
+   Write functions to create a new node, add nodes to the list, and print the list.
+
+   ```c
+   // Function to create a new node
+   struct Node* createNode(Build_t data) {
+       struct Node* newNode = (struct Node*)malloc(sizeof(struct Node));
+       newNode->data = data;
+       newNode->next = NULL;
+       return newNode;
+   }
+
+   // Function to append a node to the end of the list
+   void appendNode(struct Node** head_ref, Build_t new_data) {
+       struct Node* new_node = createNode(new_data);
+       struct Node* last = *head_ref;
+
+       if (*head_ref == NULL) {
+           *head_ref = new_node;
+           return;
+       }
+
+       while (last->next != NULL) {
+           last = last->next;
+       }
+
+       last->next = new_node;
+   }
+
+   // Function to print the linked list
+   void printList(struct Node* node) {
+       while (node != NULL) {
+           printf("Build: %d\n", node->data.build);
+           printf("CPU: %s\n", node->data.cpu);
+           printf("GPU: %s\n", node->data.gpu);
+           printf("Cost: $%d\n", node->data.cost);
+           printf("\n");
+           node = node->next;
+       }
+   }
+
+   int main() {
+       // Initialize the head of the list
+       struct Node* head = NULL;
+
+       // Define the build data
+       Build_t builds[] = {
+           {1, "Intel Core i7-13700K", "NVIDIA GeForce RTX 4070", 1200},
+           {2, "AMD Ryzen 9 7900X", "AMD Radeon RX 7900 XT", 1100},
+           {3, "Intel Core i9-13900K", "NVIDIA GeForce RTX 4090", 2500},
+           {4, "AMD Ryzen 7 7700X", "NVIDIA GeForce RTX 3070", 900}
+       };
+
+       // Add builds to the linked list
+       int numBuilds = sizeof(builds) / sizeof(builds[0]);
+       for (int i = 0; i < numBuilds; i++) {
+           appendNode(&head, builds[i]);
+       }
+
+       // Print the linked list
+       printList(head);
+
+       // Free the allocated memory
+       struct Node* current = head;
+       struct Node* next;
+       while (current != NULL) {
+           next = current->next;
+           free(current);
+           current = next;
+       }
+
+       return 0;
+   }
+   ```
+
+This code defines a `Node` struct that represents a node in the linked list, with each node containing a `Build_t` struct and a pointer to the next node. The `createNode` function creates a new node, `appendNode` adds a node to the end of the list, and `printList` prints the contents of the linked list. The `main` function demonstrates how to initialize the list, add nodes, print the list, and free the allocated memory.
