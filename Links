@@ -259,3 +259,138 @@ In this code:
 - **appendNode** is used to add new nodes (hook into the list).
 - **printList** is used to read and print the data from each node.
 - **freeList** is used to free the memory allocated for the linked list nodes.
+
+---------
+If you're passing the binary data into your C code via a hook function and then parsing it into a struct, you'll need to define a struct in C that matches the structure of your JSON data. For simplicity, let's assume you've already converted your JSON to a C struct. Here's how you can parse and read it:
+
+1. **Define the Struct**:
+   - Create a struct that matches the structure of your JSON data.
+
+2. **Parse the Binary Data**:
+   - Use the struct to read the binary data.
+
+3. **Print the Contents**:
+   - Print the contents of the struct.
+
+Here’s a detailed example:
+
+### Step 1: Define the Struct
+
+Assuming your JSON data structure looks like this:
+```yaml
+builds:
+  - build: 1
+    cpu: "Intel Core i7-13700K"
+    gpu: "NVIDIA GeForce RTX 4070"
+    cost: 1200
+```
+
+Define a corresponding C struct:
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct {
+    int build;
+    char cpu[50];
+    char gpu[50];
+    int cost;
+} Build;
+
+typedef struct {
+    int num_builds;
+    Build *builds;
+} BuildsData;
+```
+
+### Step 2: Parse the Binary Data
+
+Assume the hook function passes the binary data and its length to the C function:
+
+```c
+void parse_and_print_builds(const unsigned char *data, size_t length) {
+    const unsigned char *ptr = data;
+
+    // Read the number of builds
+    int num_builds;
+    memcpy(&num_builds, ptr, sizeof(int));
+    ptr += sizeof(int);
+
+    // Allocate memory for the builds
+    Build *builds = (Build *)malloc(num_builds * sizeof(Build));
+
+    for (int i = 0; i < num_builds; i++) {
+        // Read each build's data
+        memcpy(&builds[i].build, ptr, sizeof(int));
+        ptr += sizeof(int);
+        
+        memcpy(builds[i].cpu, ptr, 50);
+        ptr += 50;
+        
+        memcpy(builds[i].gpu, ptr, 50);
+        ptr += 50;
+        
+        memcpy(&builds[i].cost, ptr, sizeof(int));
+        ptr += sizeof(int);
+    }
+
+    // Print the builds
+    for (int i = 0; i < num_builds; i++) {
+        printf("Build: %d\n", builds[i].build);
+        printf("CPU: %s\n", builds[i].cpu);
+        printf("GPU: %s\n", builds[i].gpu);
+        printf("Cost: %d\n\n", builds[i].cost);
+    }
+
+    // Free allocated memory
+    free(builds);
+}
+
+int main() {
+    // Example binary data and length
+    unsigned char example_data[] = {
+        // Number of builds (4 bytes)
+        0x04, 0x00, 0x00, 0x00,
+        // Build 1
+        0x01, 0x00, 0x00, 0x00,
+        'I', 'n', 't', 'e', 'l', ' ', 'C', 'o', 'r', 'e', ' ', 'i', '7', '-', '1', '3', '7', '0', '0', 'K', '\0',
+        // Padding to make it 50 bytes
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        'N', 'V', 'I', 'D', 'I', 'A', ' ', 'G', 'e', 'F', 'o', 'r', 'c', 'e', ' ', 'R', 'T', 'X', ' ', '4', '0', '7', '0', '\0',
+        // Padding to make it 50 bytes
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xB0, 0x04, 0x00, 0x00,
+        // Build 2, 3, and 4 would follow in a similar manner...
+    };
+    size_t example_length = sizeof(example_data);
+
+    // Call the function with example data
+    parse_and_print_builds(example_data, example_length);
+
+    return 0;
+}
+```
+
+### Explanation
+
+1. **Define the Struct**:
+   - The `Build` struct holds the information for each build.
+   - The `BuildsData` struct (optional in this example) could hold an array of `Build` structs and the number of builds.
+
+2. **Parsing Function**:
+   - `parse_and_print_builds` takes a pointer to the binary data and its length.
+   - It reads the number of builds, allocates memory for them, and then iterates over the binary data to populate the `Build` structs.
+   - Finally, it prints out the contents of each `Build`.
+
+3. **Main Function**:
+   - Creates some example binary data matching the format described.
+   - Calls the parsing function with this data.
+
+In this example, the binary data for each `Build` is assumed to be:
+- `int` for the build number.
+- Fixed 50-byte strings for `cpu` and `gpu`.
+- `int` for the cost.
+
+You'd adjust the struct and parsing logic if your binary data format is different.
