@@ -1,0 +1,93 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef struct _Build_t {
+    int build;
+    char cpu[50];
+    char gpu[50];
+    int cost;
+} Build_t;
+
+typedef struct _Node_t {
+    Build_t data;
+    struct _Node_t* next;
+} Node_t;
+
+// Function to create a new node
+Node_t* createNode(Build_t data) {
+    Node_t* newNode = (Node_t*)malloc(sizeof(Node_t));
+    if (!newNode) {
+        fprintf(stderr, "Memory allocation error\n");
+        exit(EXIT_FAILURE);
+    }
+    newNode->data = data;
+    newNode->next = NULL;
+    return newNode;
+}
+
+// Function to append a node to the end of the list
+void appendNode(Node_t** head_ref, Build_t new_data) {
+    Node_t* new_node = createNode(new_data);
+    Node_t* last = *head_ref;
+
+    if (*head_ref == NULL) {
+        *head_ref = new_node;
+        return;
+    }
+
+    while (last->next != NULL) {
+        last = last->next;
+    }
+
+    last->next = new_node;
+}
+
+// Function to print the linked list
+void printList(Node_t* node) {
+    while (node != NULL) {
+        printf("Build: %d\n", node->data.build);
+        printf("CPU: %s\n", node->data.cpu);
+        printf("GPU: %s\n", node->data.gpu);
+        printf("Cost: $%d\n", node->data.cost);
+        printf("\n");
+        node = node->next;
+    }
+}
+
+// Function to free the linked list
+void freeList(Node_t* head) {
+    Node_t* temp;
+    while (head != NULL) {
+        temp = head;
+        head = head->next;
+        free(temp);
+    }
+}
+
+int main() {
+    // Initialize the head of the list
+    Node_t* head = NULL;
+
+    // Define the build data
+    Build_t builds[] = {
+        {1, "Intel Core i7-13700K", "NVIDIA GeForce RTX 4070", 1200},
+        {2, "AMD Ryzen 9 7900X", "AMD Radeon RX 7900 XT", 1100},
+        {3, "Intel Core i9-13900K", "NVIDIA GeForce RTX 4090", 2500},
+        {4, "AMD Ryzen 7 7700X", "NVIDIA GeForce RTX 3070", 900}
+    };
+
+    // Add builds to the linked list
+    int numBuilds = sizeof(builds) / sizeof(builds[0]);
+    for (int i = 0; i < numBuilds; i++) {
+        appendNode(&head, builds[i]);
+    }
+
+    // Print the linked list
+    printList(head);
+
+    // Free the allocated memory
+    freeList(head);
+
+    return 0;
+}
