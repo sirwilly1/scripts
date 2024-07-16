@@ -76,3 +76,97 @@ int main() {
 ### Notes:
 - In a real implementation, the `load_pc_builds` function would need to read the binary data from the `.pcparams` section and correctly parse it into the `pclist` structure.
 - Ensure that the linker script places the `.pcparams` section correctly in memory where the binary data is loaded.
+
+
+
+-------
+Certainly! Here is the updated C program that reads the data from the binary data loaded into the `.pcparams` section. This example assumes that the binary data is already placed in memory at the correct location.
+
+### C Program
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+
+// Typedef structure for PC builds
+typedef struct {
+    char cpu[50];
+    char gpu[50];
+    int cost;
+} PCBuild;
+
+// Define a section attribute for pclistEntry
+typedef struct {
+    PCBuild builds[10];
+    int build_count;
+} pclistEntry;
+
+__attribute__ ((section(".pcparams"))) pclistEntry pclist;
+
+// Function to read an integer from a byte buffer
+int read_int_from_buffer(const uint8_t **buffer) {
+    int value;
+    memcpy(&value, *buffer, sizeof(int));
+    *buffer += sizeof(int);
+    return value;
+}
+
+// Function to read a string from a byte buffer
+void read_string_from_buffer(char *dest, const uint8_t **buffer, int length) {
+    memcpy(dest, *buffer, length);
+    dest[length] = '\0';
+    *buffer += length;
+}
+
+void load_pc_builds_from_memory() {
+    // Simulated binary data (in practice, this would be in .pcparams section)
+    const uint8_t *buffer = (const uint8_t *)&pclist;
+
+    pclist.build_count = read_int_from_buffer(&buffer);
+
+    for (int i = 0; i < pclist.build_count; i++) {
+        int cpu_len = read_int_from_buffer(&buffer);
+        read_string_from_buffer(pclist.builds[i].cpu, &buffer, cpu_len);
+
+        int gpu_len = read_int_from_buffer(&buffer);
+        read_string_from_buffer(pclist.builds[i].gpu, &buffer, gpu_len);
+
+        pclist.builds[i].cost = read_int_from_buffer(&buffer);
+    }
+}
+
+void print_pc_builds() {
+    for (int i = 0; i < pclist.build_count; i++) {
+        printf("Build %d:\n", i + 1);
+        printf("  CPU: %s\n", pclist.builds[i].cpu);
+        printf("  GPU: %s\n", pclist.builds[i].gpu);
+        printf("  Cost: %d\n", pclist.builds[i].cost);
+    }
+}
+
+int main() {
+    load_pc_builds_from_memory();
+    print_pc_builds();
+    return 0;
+}
+```
+
+### Explanation:
+
+1. **Read Functions**:
+   - `read_int_from_buffer`: Reads an integer from the buffer and advances the buffer pointer.
+   - `read_string_from_buffer`: Reads a string of a given length from the buffer and advances the buffer pointer.
+
+2. **Loading Data**:
+   - `load_pc_builds_from_memory`: This function reads the data from the `.pcparams` section (simulated as a buffer). It extracts the build count first, then iterates over the builds, reading the CPU and GPU strings and the cost for each build.
+
+3. **Main Function**: Calls `load_pc_builds_from_memory` to load the data from memory and then `print_pc_builds` to display it.
+
+### Notes:
+
+- This example assumes that the `.pcparams` section has been correctly populated with the binary data in the expected format.
+- The actual binary data in the `.pcparams` section should be structured as follows: 
+  - `[build_count][cpu_length][cpu_string][gpu_length][gpu_string][cost]` for each build.
+- Ensure your build process and linker script correctly place the `.pcparams` section in memory where your binary data resides.
