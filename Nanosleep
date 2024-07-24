@@ -1,0 +1,50 @@
+The `nanosleep()` function in C is used to suspend the execution of the calling thread for a specified time. It takes two parameters, both of which are pointers to `struct timespec`. Here's a brief explanation of these parameters:
+
+1. **`req` (required time)**: This is a pointer to a `struct timespec` that specifies the desired sleep interval.
+
+2. **`rem` (remaining time)**: This is a pointer to a `struct timespec` that, if not NULL, is used to store the remaining time if the sleep is interrupted by a signal handler. If the sleep completes successfully, this structure will contain the value zero.
+
+The `struct timespec` is defined as:
+
+```c
+struct timespec {
+    time_t tv_sec;  // seconds
+    long tv_nsec;   // nanoseconds
+};
+```
+
+Here's an example of how to use `nanosleep()`:
+
+```c
+#include <time.h>
+#include <stdio.h>
+
+int main() {
+    struct timespec req, rem;
+
+    // Set the sleep time to 1.5 seconds (1 second and 500 million nanoseconds)
+    req.tv_sec = 1;
+    req.tv_nsec = 500000000L;
+
+    // Call nanosleep
+    if (nanosleep(&req, &rem) == -1) {
+        perror("nanosleep");
+        // If interrupted, rem will contain the remaining time
+        printf("Remaining time: %ld seconds and %ld nanoseconds\n", rem.tv_sec, rem.tv_nsec);
+    } else {
+        printf("Sleep completed successfully\n");
+    }
+
+    return 0;
+}
+```
+
+### Explanation:
+
+- **`req`**: Specifies the time to sleep. In this example, it is set to 1.5 seconds (1 second and 500 million nanoseconds).
+- **`rem`**: If the sleep is interrupted, it will contain the remaining time left to sleep. If `nanosleep()` completes without interruption, `rem` will be zero.
+
+### Return Value:
+
+- On success, `nanosleep()` returns 0.
+- On failure, it returns -1 and sets `errno` to indicate the error. If interrupted by a signal, `errno` is set to `EINTR`, and `rem` will contain the remaining unslept time.
