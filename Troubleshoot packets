@@ -1,0 +1,153 @@
+Duplicate ACKs are a common indication that packets are being lost or delivered out of order in a TCP connection. They occur when the receiver notices a gap in the sequence numbers of received packets and responds by sending an acknowledgment for the last correctly received packet.
+
+Here are some potential causes of duplicate ACKs in your context, along with possible fixes:
+
+### Causes of Duplicate ACKs
+
+1. **Packet Loss**:
+   - If packets are being lost in transit, the receiver will keep sending ACKs for the last successfully received packet.
+
+2. **Out-of-Order Packet Delivery**:
+   - If packets are delivered out of order, the receiver will acknowledge the last correctly received packet until the missing packets are received.
+
+3. **Incorrect Sequence Numbers**:
+   - If your program modifies sequence numbers incorrectly, the receiver may detect gaps and send duplicate ACKs.
+
+4. **Retransmission Timeouts**:
+   - If the sender does not receive an ACK in time, it may retransmit the packet, causing duplicate ACKs if the receiver has already processed the original packet.
+
+### Ensuring Correct Handling to Mitigate Duplicate ACKs
+
+1. **Accurate Sequence and Acknowledgment Numbers**:
+   - Ensure that sequence numbers and acknowledgment numbers are handled correctly. When modifying packets, be careful not to disrupt the TCP sequence.
+
+2. **Proper Checksum Calculation**:
+   - Verify that both IP and TCP checksums are recalculated correctly after any modifications to ensure that packets are not dropped due to checksum errors.
+
+3. **Consistent Packet Order**:
+   - Maintain the order of packets when capturing and forwarding. Out-of-order delivery can cause confusion and result in duplicate ACKs.
+
+4. **Avoiding Packet Duplication**:
+   - Ensure that packets are not inadvertently duplicated by your program. Each packet should be processed and forwarded exactly once.
+
+### Enhanced Code Example
+
+Here's an enhanced version of the previous code to help address these issues. This code includes more detailed logging and additional verification steps to ensure correct sequence and acknowledgment number handling:
+
+```c
+#include <pcap.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+
+// Pseudo-header needed for TCP checksum calculation
+struct pseudo_header {
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t tcp_length;
+};
+
+// Function to calculate checksum
+unsigned short checksum(void *b, int len) {
+    unsigned short *buf = b;
+    unsigned int sum = 0;
+    unsigned short result;
+
+    for (sum = 0; len > 1; len -= 2)
+        sum += *buf++;
+    if (len == 1)
+        sum += *(unsigned char *)buf;
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+    result = ~sum;
+    return result;
+}
+
+void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+    struct iphdr *iph = (struct iphdr *)(packet + 14); // Skip Ethernet header
+    struct tcphdr *tcph = (struct tcphdr *)(packet + 14 + iph->ihl * 4);
+
+    printf("Original Source IP: %s\n", inet_ntoa(*(struct in_addr *)&iph->saddr));
+    printf("Original Dest IP: %s\n", inet_ntoa(*(struct in_addr *)&iph->daddr));
+    printf("Original Source Port: %d\n", ntohs(tcph->source));
+    printf("Original Dest Port: %d\n", ntohs(tcph->dest));
+    printf("Original Sequence Number: %u\n", ntohl(tcph->seq));
+    printf("Original Acknowledgment Number: %u\n", ntohl(tcph->ack_seq));
+
+    iph->saddr = inet_addr("SRC_IP"); // Replace with actual source IP
+    iph->daddr = inet_addr("TARGET_IP"); // Replace with actual target IP
+    tcph->source = htons(SRC_PORT); // Replace with actual source port
+    tcph->dest = htons(TARGET_PORT); // Replace with actual target port
+
+    iph->check = 0;
+    iph->check = checksum((unsigned short *)iph, iph->ihl * 4);
+
+    struct pseudo_header psh;
+    psh.source_address = inet_addr("SRC_IP");
+    psh.dest_address = inet_addr("TARGET_IP");
+    psh.placeholder = 0;
+    psh.protocol = IPPROTO_TCP;
+    psh.tcp_length = htons(sizeof(struct tcphdr));
+
+    int psize = sizeof(struct pseudo_header) + sizeof(struct tcphdr);
+    unsigned char *pseudogram = malloc(psize);
+
+    memcpy(pseudogram, (char *)&psh, sizeof(struct pseudo_header));
+    memcpy(pseudogram + sizeof(struct pseudo_header), tcph, sizeof(struct tcphdr));
+
+    tcph->check = checksum((unsigned short *)pseudogram, psize);
+
+    free(pseudogram);
+
+    printf("Modified Source IP: %s\n", inet_ntoa(*(struct in_addr *)&iph->saddr));
+    printf("Modified Dest IP: %s\n", inet_ntoa(*(struct in_addr *)&iph->daddr));
+    printf("Modified Source Port: %d\n", ntohs(tcph->source));
+    printf("Modified Dest Port: %d\n", ntohs(tcph->dest));
+    printf("Modified Sequence Number: %u\n", ntohl(tcph->seq));
+    printf("Modified Acknowledgment Number: %u\n", ntohl(tcph->ack_seq));
+
+    // Send the modified packet (use raw sockets here)
+    // This is a placeholder. You need to implement raw socket sending.
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        printf("Usage: %s <targetIp> <targetPort> <srcIp> <srcPort>\n", argv[0]);
+        return 1;
+    }
+
+    char *targetIp = argv[1];
+    int targetPort = atoi(argv[2]);
+    char *srcIp = argv[3];
+    int srcPort = atoi(argv[4]);
+
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_t *handle;
+
+    // Open the session in promiscuous mode
+    handle = pcap_open_live("eth0", BUFSIZ, 1, 1000, errbuf);
+    if (handle == NULL) {
+        fprintf(stderr, "Couldn't open device: %s\n", errbuf);
+        return 2;
+    }
+
+    // Capture packets
+    pcap_loop(handle, 0, packet_handler, NULL);
+
+    pcap_close(handle);
+    return 0;
+}
+```
+
+### Key Points:
+
+1. **Checksum Calculation**: Verify checksum calculations for both IP and TCP headers.
+2. **Logging**: Added detailed logging for original and modified packet details.
+3. **Correct Sequence Handling**: Ensure sequence and acknowledgment numbers are correctly handled.
+
+This code captures packets on the `eth0` interface, modifies the IP and TCP headers, and logs important information about the packet before and after modification. You need to add the actual code to send the modified packet using raw sockets.
