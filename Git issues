@@ -1,0 +1,35 @@
+To merge your branch into the `main` branch, you can follow these steps:
+
+1. **Ensure your branch is up to date with the latest changes from the remote repository:**
+    ```sh
+    git fetch origin
+    ```
+
+2. **Checkout the `main` branch:**
+    ```sh
+    git checkout main
+    ```
+
+3. **Merge your branch into the `main` branch:**
+    ```sh
+    git merge your-branch-name
+    ```
+
+4. **Resolve any conflicts if they arise:**
+    - Git will prompt you if there are conflicts that need to be resolved. Open the conflicting files in your text editor or IDE, resolve the conflicts, and then stage the resolved files:
+        ```sh
+        git add path/to/resolved-file
+        ```
+
+5. **Complete the merge:**
+    - After resolving conflicts and staging the resolved files, complete the merge with:
+        ```sh
+        git commit
+        ```
+
+6. **Push the merged changes to the remote repository:**
+    ```sh
+    git push origin main
+    ```
+
+Replace `your-branch-name` with the name of your branch. This process ensures your branch is merged into the `main` branch and the `main` branch is updated on the remote repository.
