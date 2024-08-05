@@ -1,0 +1,106 @@
+To SSH from your Windows machine through a Debian VM to an emulator running on a TAP interface, you'll need to set up port forwarding or use SSH tunneling. Here’s how you can achieve this:
+
+### Network Setup
+
+- **Windows IP**: 192.168.1.1
+- **Debian VM IP**: 10.50.0.27
+- **TAP IP on Debian VM**: 15.15.15.1
+- **Emulator IP on TAP network**: Assume 15.15.15.2
+
+### Steps to SSH from Windows to Emulator via Debian VM
+
+#### 1. Set Up TAP Interface on Debian VM
+
+Ensure the TAP interface is configured and up on your Debian VM:
+
+```sh
+sudo ip tuntap add dev tap0 mode tap
+sudo ip addr add 15.15.15.1/24 dev tap0
+sudo ip link set dev tap0 up
+```
+
+#### 2. Verify Connectivity
+
+Ensure that your Debian VM can communicate with the emulator:
+
+```sh
+ping 15.15.15.2
+```
+
+#### 3. Set Up SSH on Debian VM
+
+Ensure the SSH server is running on your Debian VM:
+
+```sh
+sudo apt-get install openssh-server
+sudo systemctl start ssh
+sudo systemctl enable ssh
+```
+
+#### 4. Create an SSH Tunnel from Windows to Emulator via Debian VM
+
+You can create an SSH tunnel using PuTTY or the built-in OpenSSH client in Windows.
+
+##### Using PuTTY:
+
+1. **Open PuTTY**.
+2. **Configure the connection to the Debian VM**:
+   - In the "Host Name (or IP address)" field, enter `10.50.0.27`.
+3. **Configure SSH Tunneling**:
+   - In the PuTTY configuration window, go to `Connection > SSH > Tunnels`.
+   - In the "Source port" field, enter `2222` (or any other available port on your Windows machine).
+   - In the "Destination" field, enter `15.15.15.2:22`.
+   - Click `Add`.
+4. **Start the SSH session**:
+   - Go back to the `Session` category and click `Open`.
+   - Log in to your Debian VM.
+
+##### Using OpenSSH Client in Windows:
+
+Open a Command Prompt or PowerShell window and use the following command to create the tunnel:
+
+```sh
+ssh -L 2222:15.15.15.2:22 username@10.50.0.27
+```
+
+Replace `username` with your actual username on the Debian VM.
+
+#### 5. SSH to the Emulator from Windows
+
+After establishing the tunnel, open another Command Prompt or PowerShell window and SSH to the emulator through the tunnel:
+
+```sh
+ssh username@localhost -p 2222
+```
+
+Replace `username` with your actual username on the emulator.
+
+### Summary of Commands and Configuration
+
+1. **Configure TAP interface on Debian VM**:
+   ```sh
+   sudo ip tuntap add dev tap0 mode tap
+   sudo ip addr add 15.15.15.1/24 dev tap0
+   sudo ip link set dev tap0 up
+   ```
+
+2. **Ensure SSH server is running on Debian VM**:
+   ```sh
+   sudo apt-get install openssh-server
+   sudo systemctl start ssh
+   sudo systemctl enable ssh
+   ```
+
+3. **Create SSH tunnel**:
+   - **Using PuTTY**: Configure tunnel with source port `2222` and destination `15.15.15.2:22`.
+   - **Using OpenSSH client**:
+     ```sh
+     ssh -L 2222:15.15.15.2:22 username@10.50.0.27
+     ```
+
+4. **SSH to the emulator via the tunnel**:
+   ```sh
+   ssh username@localhost -p 2222
+   ```
+
+This setup allows you to securely SSH from your Windows machine to the emulator by tunneling through the Debian VM.
