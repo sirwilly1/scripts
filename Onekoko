@@ -1,0 +1,312 @@
+The `oneko` program has several command-line flags that allow you to customize its behavior and appearance. Here is a list of the flags and what they do:
+
+### Command-Line Flags for `oneko`
+
+- `-tofocus`
+  - The cat will chase the active window instead of the mouse cursor.
+
+- `-towindow`
+  - The cat will chase a specific window that you specify.
+
+- `-name <window name>`
+  - Used with `-towindow`, the cat will chase the window with the given name.
+
+- `-dog`
+  - Replaces the cat with a dog character.
+
+- `-tomoyo`
+  - Replaces the cat with Tomoyo, a different character.
+
+- `-sakura`
+  - Replaces the cat with Sakura Kinomoto from the anime series "Cardcaptor Sakura".
+
+- `-bsd`
+  - Replaces the cat with the BSD Daemon.
+
+- `-nezumi`
+  - Replaces the cat with a mouse character.
+
+- `-rv`
+  - Reverses the colors of the character.
+
+- `-speed <speed>`
+  - Sets the speed of the character's movement. The default is `10`.
+
+- `-time <milliseconds>`
+  - Sets the delay time in milliseconds between movements. The default is `50`.
+
+- `-idle`
+  - The character will only appear when the mouse is idle.
+
+- `-patchlevel`
+  - Prints the patch level of the program and exits.
+
+### Example Usage
+
+- To run `oneko` with the cat chasing the active window:
+  ```sh
+  oneko -tofocus
+  ```
+
+- To run `oneko` with a dog instead of a cat:
+  ```sh
+  oneko -dog
+  ```
+
+- To set the speed of the character to 20:
+  ```sh
+  oneko -speed 20
+  ```
+
+For a complete list of options and further details, you can refer to the `oneko` manual page:
+```sh
+man oneko
+```
+
+The `oneko` program itself, once installed, has several command-line flags that control its behavior. `oneko` is a fun program that makes a cat chase the mouse cursor around your screen. Here is a list of common `oneko` command-line flags:
+
+1. **-rv**  
+   Reverse video (i.e., invert the colors).
+
+2. **-fg color**  
+   Set the foreground color.
+
+3. **-bg color**  
+   Set the background color.
+
+4. **-tora**  
+   Change the cat to a "tora-neko" (tiger cat).
+
+5. **-tomoyo**  
+   Change the cat to Tomoyo.
+
+6. **-bsd**  
+   Change the cat to BSD Daemon.
+
+7. **-dog**  
+   Change the cat to a dog.
+
+8. **-sakura**  
+   Change the cat to Sakura.
+
+9. **-balloon**  
+   Show a speech balloon.
+
+10. **-speed number**  
+    Set the speed (default is 10).
+
+11. **-time number**  
+    Set the interval time (default is 125000).
+
+12. **-towindow**  
+    The cat chases the active window instead of the mouse cursor.
+
+13. **-tofocus**  
+    The cat chases the focused window.
+
+14. **-name name**  
+    Set the window name of `oneko`.
+
+15. **-position**  
+    Set the initial position of `oneko`.
+
+16. **-display displayname**  
+    Specify the X server to connect to.
+
+17. **-scale factor**  
+    Scale the size of the cat by a given factor.
+
+18. **-rcfile filename**  
+    Read configuration from a specified file.
+
+You can always run `oneko --help` in the terminal to get a complete list of available flags and options.
+
+
+
+---------
+
+
+Here is a comprehensive list of `oneko` command-line flags, along with examples of how each flag can be used:
+
+1. **-rv**
+   - **Description:** Reverse video (invert the colors).
+   - **Example:** `oneko -rv`
+
+2. **-fg color**
+   - **Description:** Set the foreground color.
+   - **Example:** `oneko -fg red`
+
+3. **-bg color**
+   - **Description:** Set the background color.
+   - **Example:** `oneko -bg black`
+
+4. **-tora**
+   - **Description:** Change the cat to a "tora-neko" (tiger cat).
+   - **Example:** `oneko -tora`
+
+5. **-tomoyo**
+   - **Description:** Change the cat to Tomoyo.
+   - **Example:** `oneko -tomoyo`
+
+6. **-bsd**
+   - **Description:** Change the cat to BSD Daemon.
+   - **Example:** `oneko -bsd`
+
+7. **-dog**
+   - **Description:** Change the cat to a dog.
+   - **Example:** `oneko -dog`
+
+8. **-sakura**
+   - **Description:** Change the cat to Sakura.
+   - **Example:** `oneko -sakura`
+
+9. **-balloon**
+   - **Description:** Show a speech balloon.
+   - **Example:** `oneko -balloon`
+
+10. **-speed number**
+    - **Description:** Set the speed (default is 10).
+    - **Example:** `oneko -speed 15`
+
+11. **-time number**
+    - **Description:** Set the interval time (default is 125000).
+    - **Example:** `oneko -time 100000`
+
+12. **-towindow**
+    - **Description:** The cat chases the active window instead of the mouse cursor.
+    - **Example:** `oneko -towindow`
+
+13. **-tofocus**
+    - **Description:** The cat chases the focused window.
+    - **Example:** `oneko -tofocus`
+
+14. **-name name**
+    - **Description:** Set the window name of `oneko`.
+    - **Example:** `oneko -name "mycat"`
+
+15. **-position x y**
+    - **Description:** Set the initial position of `oneko`.
+    - **Example:** `oneko -position 100 100`
+
+16. **-display displayname**
+    - **Description:** Specify the X server to connect to.
+    - **Example:** `oneko -display :0`
+
+17. **-scale factor**
+    - **Description:** Scale the size of the cat by a given factor.
+    - **Example:** `oneko -scale 2`
+
+18. **-rcfile filename**
+    - **Description:** Read configuration from a specified file.
+    - **Example:** `oneko -rcfile /path/to/configfile`
+
+19. **-noxrm**
+    - **Description:** Ignore X resource database.
+    - **Example:** `oneko -noxrm`
+
+20. **-version**
+    - **Description:** Display version information.
+    - **Example:** `oneko -version`
+
+21. **-help**
+    - **Description:** Display help information.
+    - **Example:** `oneko -help`
+
+These examples demonstrate how to use each flag with the `oneko` command to achieve different behaviors and customizations.
+
+---------
+
+Here are additional flags and options for `oneko` that were not covered previously. These options can be verified by checking the `oneko` documentation or running `oneko --help` in the terminal.
+
+### Additional `oneko` Flags:
+
+1. **-name string**
+   - **Description:** Set the window name of the oneko.
+   - **Example:** `oneko -name "MyCat"`
+
+2. **-rcfile filename**
+   - **Description:** Specify a configuration file to read settings from.
+   - **Example:** `oneko -rcfile /path/to/configfile`
+
+3. **-noshape**
+   - **Description:** Do not use shape extension.
+   - **Example:** `oneko -noshape`
+
+4. **-nolock**
+   - **Description:** Do not grab the pointer or keyboard.
+   - **Example:** `oneko -nolock`
+
+5. **-towindow**
+   - **Description:** Make the cat chase the active window.
+   - **Example:** `oneko -towindow`
+
+6. **-remote hostname**
+   - **Description:** Specify a remote display.
+   - **Example:** `oneko -remote myhost:0.0`
+
+### Summary of previously listed flags for completeness:
+
+1. **-rv**
+   - **Example:** `oneko -rv`
+
+2. **-fg color**
+   - **Example:** `oneko -fg red`
+
+3. **-bg color**
+   - **Example:** `oneko -bg black`
+
+4. **-tora**
+   - **Example:** `oneko -tora`
+
+5. **-tomoyo**
+   - **Example:** `oneko -tomoyo`
+
+6. **-bsd**
+   - **Example:** `oneko -bsd`
+
+7. **-dog**
+   - **Example:** `oneko -dog`
+
+8. **-sakura**
+   - **Example:** `oneko -sakura`
+
+9. **-balloon**
+   - **Example:** `oneko -balloon`
+
+10. **-speed number**
+    - **Example:** `oneko -speed 15`
+
+11. **-time number**
+    - **Example:** `oneko -time 100000`
+
+12. **-towindow**
+    - **Example:** `oneko -towindow`
+
+13. **-tofocus**
+    - **Example:** `oneko -tofocus`
+
+14. **-name string**
+    - **Example:** `oneko -name "mycat"`
+
+15. **-position x y**
+    - **Example:** `oneko -position 100 100`
+
+16. **-display displayname**
+    - **Example:** `oneko -display :0`
+
+17. **-scale factor**
+    - **Example:** `oneko -scale 2`
+
+18. **-rcfile filename**
+    - **Example:** `oneko -rcfile /path/to/configfile`
+
+19. **-noxrm**
+    - **Example:** `oneko -noxrm`
+
+20. **-version**
+    - **Example:** `oneko -version`
+
+21. **-help**
+    - **Example:** `oneko -help`
+
+These additional flags should cover more configurations and customizations for `oneko`. For the most accurate and up-to-date list, always refer to the program's help command or manual page.
