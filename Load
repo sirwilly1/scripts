@@ -1,0 +1,66 @@
+If the response you receive is in RAW format (as a `load` field in the packet) and you want to convert it to a readable string, you can do so by decoding the `load` field from bytes to a string. Here's how you can do it in the Scapy interactive shell:
+
+### Example Scenario
+
+Suppose you receive a response like this:
+
+```python
+>>> response = sr1(packet, timeout=2)
+>>> response.show()
+```
+
+And the output shows something like:
+
+```text
+###[ Raw ]###
+  load = b'\x30\x81\x8b\x02\x01\x01\x04\x06public\xa2\x7e\x02\x04...\x00'
+```
+
+### Step-by-Step Guide to Decode the `load` Field
+
+#### Step 1: Access the `Raw` Layer
+
+If the `load` field is part of the `Raw` layer, you can access it directly:
+
+```python
+>>> raw_load = response[Raw].load
+```
+
+#### Step 2: Decode the Raw Data
+
+To convert this raw data into a readable string, decode it using the appropriate encoding. Most SNMP responses are in ASCII or UTF-8:
+
+```python
+>>> readable_string = raw_load.decode('utf-8', errors='ignore')
+```
+
+The `errors='ignore'` argument helps skip over any non-decodable bytes without raising an error.
+
+#### Step 3: Print the Decoded String
+
+```python
+>>> print(readable_string)
+```
+
+### Putting It All Together
+
+Here’s how the entire process looks in the Scapy interactive shell:
+
+```python
+>>> response = sr1(packet, timeout=2)
+>>> if response:
+...     response.show()
+...     if Raw in response:
+...         raw_load = response[Raw].load
+...         readable_string = raw_load.decode('utf-8', errors='ignore')
+...         print("Decoded Response:", readable_string)
+... else:
+...     print("No response received.")
+```
+
+### Notes:
+
+- **Decoding**: If you are unsure of the encoding, start with `'utf-8'`, as it is the most common. If that doesn't work, try other encodings like `'ascii'`.
+- **Handling Errors**: The `errors='ignore'` argument is helpful if there are non-UTF-8 characters in the response. If you want to handle errors differently, you can use `'replace'` to replace non-decodable characters with a placeholder.
+
+This approach should help you convert the raw response into a more readable format. Let me know if you need further assistance!
