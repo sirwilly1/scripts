@@ -1,0 +1,27 @@
+Yes, you can use a single command in the terminal to rename all `.txt` files to `.mib` in a directory. Here's the command:
+
+```bash
+for file in *.txt; do mv "$file" "${file%.txt}.mib"; done
+```
+
+### Explanation:
+
+- `for file in *.txt`: This part of the command loops over all files with the `.txt` extension in the current directory.
+- `mv "$file" "${file%.txt}.mib"`: This renames each file by stripping off the `.txt` extension (`${file%.txt}`) and appending `.mib`.
+- `done`: Marks the end of the loop.
+
+### How to Use:
+
+1. Navigate to the directory where your `.txt` MIB files are located:
+
+   ```bash
+   cd /path/to/your/mibs
+   ```
+
+2. Run the command:
+
+   ```bash
+   for file in *.txt; do mv "$file" "${file%.txt}.mib"; done
+   ```
+
+This command will rename all `.txt` files in the directory to `.mib` in one go, without needing a separate script.
