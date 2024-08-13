@@ -1,0 +1,86 @@
+Using the Scapy interactive shell (also known as `scapy` or `scapy3k` depending on your installation) to send an SNMP packet is quite similar to writing a script, but you execute commands interactively one by one. Here’s how you can do it:
+
+### 1. **Launch the Scapy Interactive Shell:**
+
+Open your terminal or command prompt and type:
+
+```bash
+scapy
+```
+
+This will start the Scapy interactive shell.
+
+### 2. **Construct and Send the Packet Interactively:**
+
+In the Scapy shell, you can enter the following commands step by step:
+
+#### Step 1: Import Necessary Modules
+```python
+>>> from scapy.all import *
+>>> from scapy.contrib.snmp import SNMP, SNMPget, SNMPvarbind
+>>> from scapy.contrib.snmp import SNMPv2c
+```
+
+#### Step 2: Define Target Information
+```python
+>>> target_ip = "192.168.1.1"  # Replace with your target IP
+>>> target_port = 161  # SNMP typically uses port 161
+```
+
+#### Step 3: Define the Community String and OID
+```python
+>>> community_string = "public"  # Replace with your community string
+>>> oid = "1.3.6.1.2.1.1.1.0"  # Replace with your specific OID
+```
+
+#### Step 4: Construct the SNMP Packet
+```python
+>>> packet = IP(dst=target_ip)/UDP(dport=target_port)/SNMP(community=community_string, PDU=SNMPget(varbindlist=[SNMPvarbind(oid=oid)]))
+```
+
+#### Step 5: Send the Packet and Receive the Response
+```python
+>>> response = sr1(packet, timeout=2)
+```
+
+#### Step 6: Display the Response
+```python
+>>> if response:
+...     response.show()
+... else:
+...     print("No response received.")
+```
+
+### Example Interaction
+
+Here’s what the interaction might look like in the Scapy shell:
+
+```text
+Welcome to Scapy (2.4.5)
+>>> from scapy.all import *
+>>> from scapy.contrib.snmp import SNMP, SNMPget, SNMPvarbind
+>>> from scapy.contrib.snmp import SNMPv2c
+>>> target_ip = "192.168.1.1"
+>>> target_port = 161
+>>> community_string = "public"
+>>> oid = "1.3.6.1.2.1.1.1.0"
+>>> packet = IP(dst=target_ip)/UDP(dport=target_port)/SNMP(community=community_string, PDU=SNMPget(varbindlist=[SNMPvarbind(oid=oid)]))
+>>> response = sr1(packet, timeout=2)
+Begin emission:
+Finished to send 1 packets.
+*
+Received 1 packets, got 1 answers, remaining 0 packets
+>>> if response:
+...     response.show()
+... else:
+...     print("No response received.")
+```
+
+### Notes:
+
+- **`sr1()`**: This function sends the packet and waits for a single response. If no response is received within the specified `timeout`, it returns `None`.
+- **`.show()`**: This method displays the contents of the received packet, allowing you to inspect the details of the response.
+
+This method allows you to quickly test and tweak your packet construction and sending process directly from the Scapy shell. If you need to run the command repeatedly or with slight modifications, the interactive shell is very convenient.
+
+Let me know if you need any further help!
