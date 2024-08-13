@@ -1,0 +1,105 @@
+Certainly! Below is a C program that interfaces with Telnet. This program will take three arguments: the IP address, the port, and either a single Telnet command or a path to a text file containing Telnet commands. The program will establish a Telnet connection and then send the commands as specified.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define BUFFER_SIZE 1024
+
+void error_handling(const char *message) {
+    perror(message);
+    exit(EXIT_FAILURE);
+}
+
+void send_telnet_command(int sock, const char *command) {
+    if (send(sock, command, strlen(command), 0) == -1) {
+        error_handling("send() error");
+    }
+}
+
+void send_commands_from_file(int sock, const char *file_path) {
+    FILE *file = fopen(file_path, "r");
+    if (file == NULL) {
+        error_handling("fopen() error");
+    }
+
+    char buffer[BUFFER_SIZE];
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        send_telnet_command(sock, buffer);
+    }
+
+    fclose(file);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <IP> <port> <command or file path>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    const char *ip = argv[1];
+    int port = atoi(argv[2]);
+    const char *command_or_path = argv[3];
+
+    int sock = socket(PF_INET, SOCK_STREAM, 0);
+    if (sock == -1) {
+        error_handling("socket() error");
+    }
+
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(ip);
+    serv_addr.sin_port = htons(port);
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1) {
+        error_handling("connect() error");
+    }
+
+    if (access(command_or_path, F_OK) != -1) {
+        // It's a file path, send commands from the file
+        send_commands_from_file(sock, command_or_path);
+    } else {
+        // It's a single command, send it directly
+        send_telnet_command(sock, command_or_path);
+    }
+
+    close(sock);
+    return 0;
+}
+```
+
+### Explanation:
+1. **Error Handling:** The `error_handling` function is used for printing error messages and exiting the program if an error occurs.
+
+2. **Socket Creation:** The program creates a socket using `socket()`.
+
+3. **Server Address Setup:** It sets up the server address structure `serv_addr` with the IP and port provided.
+
+4. **Connecting to the Server:** The program attempts to connect to the specified IP and port with `connect()`.
+
+5. **Command Handling:**
+    - If the third argument is a valid file path, the program reads the file line by line and sends each line as a Telnet command.
+    - If it’s not a valid file path, the program assumes it's a single Telnet command and sends it directly.
+
+6. **Closing the Socket:** After sending the commands, the socket is closed using `close()`.
+
+### Usage:
+You can compile and run this program as follows:
+
+```sh
+gcc -o telnet_interface telnet_interface.c
+./telnet_interface 192.168.1.100 23 "some_telnet_command"
+```
+
+Or, if you have a file with commands:
+
+```sh
+./telnet_interface 192.168.1.100 23 /path/to/commands.txt
+```
+
+This program should give you a basic interface to interact with Telnet using C. Adjustments might be necessary depending on specific needs or to handle more advanced Telnet features like negotiation options.
