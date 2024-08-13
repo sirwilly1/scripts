@@ -1,0 +1,33 @@
+from scapy.all import *
+from scapy.contrib.snmp import SNMP, SNMPget, SNMPvarbind
+from scapy.contrib.snmp import SNMPv2c
+
+# Define the target IP and port
+target_ip = "192.168.1.1"  # Replace with your target IP
+target_port = 161  # SNMP typically uses port 161
+
+# Define the community string (often 'public' for SNMPv2c)
+community_string = "public"
+
+# Define the OID you want to query
+oid = "1.3.6.1.2.1.1.1.0"  # Replace with your specific OID
+
+# Construct the SNMP packet
+packet = IP(dst=target_ip)/UDP(dport=target_port)/SNMP(community=community_string, PDU=SNMPget(varbindlist=[SNMPvarbind(oid=oid)]))
+
+# Send the packet and capture the response
+response = sr1(packet, timeout=2)
+
+# Display the response and decode the 'load' field if it's in RAW format
+if response:
+    response.show()
+    # Check if the response contains a Raw layer with a load field
+    if Raw in response:
+        raw_load = response[Raw].load
+        # Decode the load field to a readable string
+        readable_string = raw_load.decode('utf-8', errors='ignore')
+        print("Decoded Response:", readable_string)
+    else:
+        print("No RAW load found in the response.")
+else:
+    print("No response received.")
