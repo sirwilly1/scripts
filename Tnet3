@@ -1,0 +1,65 @@
+Here’s a Python script that uses the `telnetlib` library to interface with a Telnet server. The script accepts command-line arguments for the IP address, port, and either a direct Telnet command or a path to a text file containing Telnet commands. The script then connects to the Telnet server, sends the commands, and prints the responses.
+
+```python
+import telnetlib
+import argparse
+import sys
+
+def connect_telnet(ip, port, commands):
+    try:
+        with telnetlib.Telnet(ip, port) as tn:
+            for command in commands:
+                tn.write(command.encode('ascii') + b"\n")
+                response = tn.read_until(b"\n", timeout=2).decode('ascii')
+                print(response.strip())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def load_commands_from_file(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            commands = file.readlines()
+        return [command.strip() for command in commands]
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="Telnet Client Script")
+    parser.add_argument("ip", help="IP address of the Telnet server")
+    parser.add_argument("port", type=int, help="Port of the Telnet server")
+    parser.add_argument("commands", help="Telnet command or path to a text file of commands")
+
+    args = parser.parse_args()
+
+    if args.commands.endswith('.txt'):
+        commands = load_commands_from_file(args.commands)
+    else:
+        commands = [args.commands]
+
+    connect_telnet(args.ip, args.port, commands)
+
+if __name__ == "__main__":
+    main()
+```
+
+### Usage
+- To send a single Telnet command:
+  ```bash
+  python telnet_client.py 192.168.1.1 23 "your_telnet_command"
+  ```
+
+- To send multiple commands from a file:
+  ```bash
+  python telnet_client.py 192.168.1.1 23 commands.txt
+  ```
+
+### Script Details
+- **`connect_telnet(ip, port, commands)`**: Connects to the specified IP and port, sends the commands, and prints the response.
+- **`load_commands_from_file(file_path)`**: Reads a list of commands from a file and returns them as a list of strings.
+- **Command-line arguments**:
+  - `ip`: IP address of the Telnet server.
+  - `port`: Port to connect to.
+  - `commands`: A Telnet command or a path to a text file containing Telnet commands.
+
+This script will work for basic Telnet interactions. For more complex use cases, you might need to extend it with additional error handling or customization based on the server responses.
