@@ -1,0 +1,97 @@
+To use the script I provided above, follow these steps:
+
+### 1. **Install Scapy:**
+
+Before running the script, you need to have Scapy installed. You can install it using pip:
+
+```bash
+pip install scapy
+```
+
+### 2. **Save the Script:**
+
+Copy the Python script into a `.py` file. For example, you can create a file named `snmp_request.py` and paste the script into it.
+
+```python
+from scapy.all import *
+from scapy.contrib.snmp import SNMP, SNMPget, SNMPvarbind
+from scapy.contrib.snmp import SNMPv2c
+
+# Define the target IP and port
+target_ip = "192.168.1.1"  # Replace with your target IP
+target_port = 161  # SNMP typically uses port 161
+
+# Define the community string (often 'public' for SNMPv2c)
+community_string = "public"
+
+# Define the OID you want to query
+oid = "1.3.6.1.2.1.1.1.0"  # Replace with your specific OID
+
+# Construct the SNMP packet
+packet = IP(dst=target_ip)/UDP(dport=target_port)/SNMP(community=community_string, PDU=SNMPget(varbindlist=[SNMPvarbind(oid=oid)]))
+
+# Send the packet and capture the response
+response = sr1(packet, timeout=2)
+
+# Display the response
+if response:
+    response.show()
+else:
+    print("No response received.")
+```
+
+### 3. **Modify the Script:**
+
+- **`target_ip`:** Replace `"192.168.1.1"` with the IP address of the device you want to send the SNMP request to.
+- **`target_port`:** By default, SNMP uses port 161, so you typically don’t need to change this unless your target is using a different port.
+- **`community_string`:** Replace `"public"` with the appropriate SNMP community string for your network. The default is usually `"public"` for read access.
+- **`oid`:** Replace `"1.3.6.1.2.1.1.1.0"` with the OID you want to query.
+
+### 4. **Run the Script:**
+
+After saving and modifying the script, you can run it using Python. Open a terminal or command prompt, navigate to the directory where your `snmp_request.py` file is saved, and run:
+
+```bash
+python snmp_request.py
+```
+
+### 5. **Check the Output:**
+
+- If the script successfully sends the SNMP request and receives a response, it will display the response using the `show()` method.
+- If there’s no response (e.g., the device didn’t respond or the IP/port is incorrect), it will print `"No response received."`
+
+### Example Output:
+
+If the script runs successfully, you might see output similar to this:
+
+```text
+###[ IP ]###
+  version   = 4
+  ihl       = 5
+  tos       = 0x0
+  len       = 92
+  id        = 1
+  flags     = 
+  frag      = 0
+  ttl       = 64
+  proto     = udp
+  chksum    = 0x1234
+  src       = 192.168.1.1
+  dst       = 192.168.1.100
+  \options   \
+###[ UDP ]###
+     sport    = 161
+     dport    = 40000
+     len      = 64
+     chksum   = 0x5678
+###[ SNMP ]###
+      version  = v2c
+      community= 'public'
+      PDU      = GetResponse
+      ###[ VarBindList ]###
+        varbindlist= [<SNMPvarbind  oid=1.3.6.1.2.1.1.1.0 value=SomeValue >]
+```
+
+This indicates that your SNMP GET request was successful and you received a response from the device containing the OID value.
+
+Let me know if you encounter any issues or need further assistance!
