@@ -1,0 +1,83 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
+#define BUFFER_SIZE 1024
+
+int main(int argc, char *argv[]) {
+    int sockfd;
+    struct sockaddr_in server_addr;
+    char buffer[BUFFER_SIZE];
+    int n;
+
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "Usage: %s <IP Address> <Port> [Message]\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    // Create socket
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Setup server address
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(atoi(argv[2])); // Port
+
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if (inet_pton(AF_INET, argv[1], &server_addr.sin_addr) <= 0) {
+        fprintf(stderr, "Invalid address/ Address not supported\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connection failed");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Connected to %s on port %s\n", argv[1], argv[2]);
+
+    if (argc == 4) { // If message is provided as third argument
+        // Send the message
+        send(sockfd, argv[3], strlen(argv[3]), 0);
+        
+        // Read server response
+        n = recv(sockfd, buffer, BUFFER_SIZE - 1, 0);
+        if (n <= 0) {
+            printf("Server closed the connection\n");
+        } else {
+            buffer[n] = '\0';
+            printf("Server: %s", buffer);
+        }
+    } else { // Interactive mode
+        while (1) {
+            // Read user input
+            printf("You: ");
+            fgets(buffer, BUFFER_SIZE, stdin);
+
+            // Send message to server
+            send(sockfd, buffer, strlen(buffer), 0);
+
+            // Read server response
+            n = recv(sockfd, buffer, BUFFER_SIZE - 1, 0);
+            if (n <= 0) {
+                printf("Server closed the connection\n");
+                break;
+            }
+
+            buffer[n] = '\0';
+            printf("Server: %s", buffer);
+        }
+    }
+
+    // Close the socket
+    close(sockfd);
+
+    return 0;
+}
