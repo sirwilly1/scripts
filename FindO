@@ -1,0 +1,105 @@
+Certainly! Below is a Python script that automates the process of finding the corresponding OID for a given object name in a MIB file. This script parses the MIB file, identifies the object, and constructs the full OID based on the hierarchy.
+
+### Python Script: `find_oid.py`
+
+```python
+import re
+import sys
+
+def parse_mib_file(mib_file):
+    oid_dict = {}
+    current_oid = []
+    with open(mib_file, 'r') as file:
+        lines = file.readlines()
+        for line in lines:
+            line = line.strip()
+
+            # Check for OBJECT IDENTIFIER definitions
+            match_oid = re.match(r'(\S+)\s+OBJECT IDENTIFIER\s+\::=\s+\{(.+)\}', line)
+            if match_oid:
+                name = match_oid.group(1)
+                oid_ref = match_oid.group(2).strip().split()
+                oid_dict[name] = (oid_ref, None)
+                continue
+
+            # Check for OBJECT-TYPE definitions
+            match_type = re.match(r'(\S+)\s+OBJECT-TYPE', line)
+            if match_type:
+                name = match_type.group(1)
+                current_oid = name
+
+            # Check for the OID assignment
+            if current_oid and line.startswith('::='):
+                oid_ref = line.split('{')[1].split('}')[0].strip().split()
+                oid_dict[current_oid] = (oid_ref, None)
+                current_oid = None
+
+    return oid_dict
+
+def build_full_oid(name, oid_dict):
+    full_oid = []
+    stack = oid_dict.get(name, (None, None))[0]
+    if not stack:
+        return None
+
+    while stack:
+        element = stack.pop()
+        if element.isdigit():
+            full_oid.insert(0, element)
+        else:
+            ref_oid, _ = oid_dict.get(element, (None, None))
+            if ref_oid:
+                stack.extend(ref_oid)
+
+    return '.'.join(full_oid)
+
+def find_oid(mib_file, object_name):
+    oid_dict = parse_mib_file(mib_file)
+    if object_name in oid_dict:
+        full_oid = build_full_oid(object_name, oid_dict)
+        return full_oid
+    else:
+        return None
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <MIB file> <Object name>")
+        sys.exit(1)
+
+    mib_file = sys.argv[1]
+    object_name = sys.argv[2]
+    oid = find_oid(mib_file, object_name)
+
+    if oid:
+        print(f"The OID for '{object_name}' is: {oid}")
+    else:
+        print(f"Object '{object_name}' not found in MIB file.")
+```
+
+### How to Use the Script
+
+1. **Save the Script**: Save the above code as `find_oid.py`.
+
+2. **Run the Script**:
+   - Ensure you have a MIB file, e.g., `RFC1213-MIB.txt`.
+   - Run the script from the command line, providing the MIB file and the object name as arguments.
+
+   Example usage:
+
+   ```bash
+   python find_oid.py RFC1213-MIB.txt sysDescr
+   ```
+
+   Output:
+
+   ```bash
+   The OID for 'sysDescr' is: 1.3.6.1.2.1.1.1
+   ```
+
+### Explanation of the Script:
+- **parse_mib_file(mib_file)**: Reads the MIB file and creates a dictionary of object names and their corresponding OID references.
+- **build_full_oid(name, oid_dict)**: Recursively constructs the full OID by walking through the hierarchy of references.
+- **find_oid(mib_file, object_name)**: Main function to find the full OID for the provided object name.
+- The script takes two arguments: the MIB file and the object name. It returns the full OID if the object is found.
+
+This script automates the process of finding an OID based on the object name from a MIB file, making it easier to work with SNMP data.
