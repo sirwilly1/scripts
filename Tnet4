@@ -1,0 +1,50 @@
+import socket
+import argparse
+import sys
+
+def connect_telnet(ip, port, commands):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((ip, port))
+            for command in commands:
+                sock.sendall(command.encode('ascii') + b"\n")
+                response = receive_data(sock)
+                print(response.strip())
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+def receive_data(sock):
+    data = b""
+    while True:
+        part = sock.recv(4096)
+        data += part
+        if len(part) < 4096:
+            break
+    return data.decode('ascii')
+
+def load_commands_from_file(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            commands = file.readlines()
+        return [command.strip() for command in commands]
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="Telnet Client Script using raw sockets")
+    parser.add_argument("ip", help="IP address of the Telnet server")
+    parser.add_argument("port", type=int, help="Port of the Telnet server")
+    parser.add_argument("commands", help="Telnet command or path to a text file of commands")
+
+    args = parser.parse_args()
+
+    if args.commands.endswith('.txt'):
+        commands = load_commands_from_file(args.commands)
+    else:
+        commands = [args.commands]
+
+    connect_telnet(args.ip, args.port, commands)
+
+if __name__ == "__main__":
+    main()
