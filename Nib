@@ -1,0 +1,62 @@
+To find an OID from a MIB name when the MIBs are spread across multiple files, you can use the `snmptranslate` command while specifying the MIB files or directories that contain those MIB files. Here’s how you can do it:
+
+### Steps:
+
+1. **Place MIB Files**: Ensure that all your MIB files are placed in directories that `snmptranslate` can access. You can have them in multiple directories if needed.
+
+2. **Use `-M` to Specify Multiple Directories**: The `-M` option allows you to specify directories where the MIB files are located. You can include multiple directories by separating them with a colon (`:`).
+
+   ```bash
+   snmptranslate -M /path/to/mibdir1:/path/to/mibdir2 -m +MIB-FILE1:+MIB-FILE2 -On mibObjectName
+   ```
+
+   - `-M /path/to/mibdir1:/path/to/mibdir2`: Specifies the directories where MIB files are located.
+   - `-m +MIB-FILE1:+MIB-FILE2`: Loads the specified MIB files. The `+` indicates adding these files to the default set of MIBs.
+   - `-On`: Outputs the numeric OID.
+   - `mibObjectName`: The name of the MIB object you want to translate.
+
+### Example:
+
+Let’s assume you have two MIB files:
+- `MY-MIB1.mib` located in `/usr/share/snmp/mibs`
+- `MY-MIB2.mib` located in `/home/user/mibs`
+
+And you want to find the OID for `myObjectName` which could be defined in any of these MIBs.
+
+The command would be:
+
+```bash
+snmptranslate -M /usr/share/snmp/mibs:/home/user/mibs -m +MY-MIB1:+MY-MIB2 -On myObjectName
+```
+
+### Example Output:
+
+If `myObjectName` corresponds to the OID `.1.3.6.1.4.1.9999.1.2`, the command would output:
+
+```bash
+.1.3.6.1.4.1.9999.1.2
+```
+
+### Important Notes:
+
+- **Order of MIB Files**: The order in which you load the MIB files (`-m +MIB-FILE1:+MIB-FILE2`) can be important if there are overlapping definitions or if one MIB depends on another.
+  
+- **Environment Variable `MIBDIRS`**: Instead of using `-M` in every command, you can set the `MIBDIRS` environment variable to include all the directories that contain your MIB files. For example:
+
+  ```bash
+  export MIBDIRS=/usr/share/snmp/mibs:/home/user/mibs
+  ```
+
+  Then, you can simply use:
+
+  ```bash
+  snmptranslate -m +MY-MIB1:+MY-MIB2 -On myObjectName
+  ```
+
+- **Loading All MIBs**: If you want to load all MIB files in the specified directories without specifying them individually, you can omit the `-m` option:
+
+  ```bash
+  snmptranslate -M /usr/share/snmp/mibs:/home/user/mibs -On myObjectName
+  ```
+
+This approach will load all available MIB files in the specified directories and try to find the OID corresponding to `myObjectName`.
