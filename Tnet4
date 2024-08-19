@@ -78,3 +78,38 @@ if response:
     response.show()
 else:
     print("No response received")
+
+
+
+
+
+----------
+import argparse
+from scapy.all import *
+
+def main():
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="SNMPv2c OID Query using Scapy")
+    parser.add_argument("target_ip", help="The IP address of the target device")
+    parser.add_argument("community_string", help="The SNMPv2c community string")
+    parser.add_argument("oid", help="The OID to query")
+    args = parser.parse_args()
+
+    # Build the SNMP packet
+    snmp_packet = IP(dst=args.target_ip)/UDP(sport=RandShort(), dport=161)/SNMP(
+        version=1,  # SNMPv2c is represented by version=1 in Scapy
+        community=args.community_string,
+        PDU=SNMPget(varbindlist=[SNMPvarbind(oid=ASN1_OID(args.oid))])
+    )
+
+    # Send the packet and capture the response
+    response = sr1(snmp_packet, timeout=2)
+
+    # Check the response
+    if response:
+        response.show()
+    else:
+        print("No response received")
+
+if __name__ == "__main__":
+    main()
