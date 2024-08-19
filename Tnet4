@@ -113,3 +113,140 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+table
+--------
+from scapy.all import *
+from scapy.layers.snmp import SNMP, SNMPnext, SNMPvarbind
+from scapy.layers.inet import IP, UDP
+
+# Define the target IP and the SNMP community
+target_ip = "192.168.1.1"  # Replace with the actual IP of the SNMP agent
+community = "public"       # Replace with the correct community string
+
+# Define the base OID of the table you want to retrieve
+base_oid = "1.3.6.1.2.1.2.2.1"  # Replace with the base OID of the table
+
+# Start the OID to be walked from the base OID
+current_oid = base_oid
+
+# Create an empty list to store the table
+table = []
+
+# Perform the SNMP walk
+while True:
+    # Create the SNMP packet
+    pkt = IP(dst=target_ip)/UDP(sport=RandShort(), dport=161)/SNMP(community=community, PDU=SNMPnext(varbindlist=[SNMPvarbind(oid=current_oid)]))
+    
+    # Send the SNMP packet and receive the response
+    response = sr1(pkt, timeout=2, verbose=0)
+    
+    # Check if we got a response
+    if response and response.haslayer(SNMP):
+        # Extract the SNMP response
+        snmp_response = response.getlayer(SNMP)
+        
+        # Get the OID and value from the response
+        oid = snmp_response.PDU.varbindlist[0].oid.val
+        value = snmp_response.PDU.varbindlist[0].value.val
+        
+        # Check if the OID is still within the table (i.e., it starts with the base OID)
+        if not oid.startswith(base_oid):
+            break
+        
+        # Append the OID and value to the table
+        table.append((oid, value))
+        
+        # Set the current OID to the next OID in the sequence
+        current_oid = oid
+    else:
+        break
+
+# Print the table
+print("SNMP Table:")
+for row in table:
+    print(f"OID: {row[0]}, Value: {row[1]}")
+
+
+
+--------
+To perform an SNMP walk starting from a specific OID using Scapy, you can use the `SNMPnext` request to iterate through the OIDs sequentially, beginning from the specified OID. The SNMP walk continues until you reach an OID that no longer matches the base OID (i.e., it's outside the subtree of the OID you started with).
+
+Here is a Python script that performs an SNMP walk starting from a specific OID using Scapy:
+
+```python
+from scapy.all import *
+from scapy.layers.snmp import SNMP, SNMPnext, SNMPvarbind
+from scapy.layers.inet import IP, UDP
+
+# Define the target IP and the SNMP community
+target_ip = "192.168.1.1"  # Replace with the actual IP of the SNMP agent
+community = "public"       # Replace with the correct community string
+
+# Define the OID from which to start the SNMP walk
+start_oid = "1.3.6.1.2.1.1"  # Replace with the OID you want to start from
+
+# Set the current OID to the start OID
+current_oid = start_oid
+
+# Create a list to store the results of the walk
+results = []
+
+# Perform the SNMP walk
+while True:
+    # Create the SNMP packet
+    pkt = IP(dst=target_ip)/UDP(sport=RandShort(), dport=161)/SNMP(community=community, PDU=SNMPnext(varbindlist=[SNMPvarbind(oid=current_oid)]))
+    
+    # Send the SNMP packet and receive the response
+    response = sr1(pkt, timeout=2, verbose=0)
+    
+    # Check if we got a response
+    if response and response.haslayer(SNMP):
+        # Extract the SNMP response
+        snmp_response = response.getlayer(SNMP)
+        
+        # Get the OID and value from the response
+        oid = snmp_response.PDU.varbindlist[0].oid.val
+        value = snmp_response.PDU.varbindlist[0].value.val
+        
+        # Check if the OID is still within the same subtree (i.e., it starts with the start OID)
+        if not oid.startswith(start_oid):
+            break
+        
+        # Append the OID and value to the results list
+        results.append((oid, value))
+        
+        # Print the current OID and value
+        print(f"OID: {oid}, Value: {value}")
+        
+        # Set the current OID to the next OID in the sequence
+        current_oid = oid
+    else:
+        break
+
+# Print a summary of the walk
+print("\nSNMP Walk Results:")
+for oid, value in results:
+    print(f"OID: {oid}, Value: {value}")
+```
+
+### Explanation:
+
+1. **Target and OID**: Set the `target_ip` to the IP address of your SNMP agent and the `community` string to match your device's SNMP configuration. The `start_oid` is the OID from which you want to begin the SNMP walk.
+
+2. **SNMP Walk Loop**: The script sends an SNMP `GetNext` request starting from the `start_oid`. The loop continues as long as the returned OIDs start with the `start_oid`, indicating that they are part of the subtree you're interested in.
+
+3. **Check the Response**: The script checks for a valid SNMP response. If a response is received, it extracts the OID and value, appends them to the `results` list, and updates the `current_oid` to the last OID received.
+
+4. **Stop Condition**: The loop stops if the next OID returned by the SNMP agent does not start with the `start_oid`. This indicates that you've walked out of the desired subtree.
+
+5. **Print the Results**: The script prints each OID and its corresponding value during the walk, followed by a summary of all the results.
+
+### Important Considerations:
+
+- **Timeouts**: If the target device does not respond within the timeout period, the loop will exit. You can adjust the `timeout` parameter in the `sr1()` function if necessary.
+- **SNMP Version**: This example assumes SNMPv2c (using community strings). If you need to use SNMPv1 or SNMPv3, you'll need to adjust the code accordingly.
+
+This script should allow you to perform an SNMP walk starting from a specific OID and print out the results. If you need to walk through a different subtree, simply change the `start_oid` value.
