@@ -1,0 +1,90 @@
+If the value you're setting in the SNMP `Set` operation is an integer, you'll need to use the `ASN1_Integer` type in Scapy. Here's how you can modify the script to handle an integer value:
+
+### Example Script: Sending an SNMP `Set` Request with an Integer Value
+
+```python
+from scapy.all import *
+from scapy.layers.snmp import SNMP, SNMPset, SNMPvarbind
+from scapy.layers.inet import IP, UDP
+
+# Define the target IP and the SNMP community
+target_ip = "192.168.1.1"  # Replace with the actual IP of the SNMP agent
+community = "private"      # Replace with the correct community string (write access)
+
+# Define the OID and the integer value you want to set
+oid = "1.3.6.1.2.1.2.2.1.7.2"  # Replace with the OID you want to set (e.g., ifAdminStatus.2)
+value = 2                      # Replace with the integer value you want to set (e.g., 2 for down, 1 for up)
+
+# Convert the value to the appropriate ASN.1 type for integers
+asn1_value = ASN1_Integer(value)
+
+# Create the SNMP Set request packet
+pkt = IP(dst=target_ip)/UDP(sport=RandShort(), dport=161)/SNMP(community=community, PDU=SNMPset(varbindlist=[SNMPvarbind(oid=oid, value=asn1_value)]))
+
+# Send the packet and receive the response
+response = sr1(pkt, timeout=2, verbose=0)
+
+# Check if we got a response
+if response and response.haslayer(SNMP):
+    snmp_response = response.getlayer(SNMP)
+    if snmp_response.PDU.error.status == 0:
+        print(f"Successfully set OID {oid} to {value}.")
+    else:
+        print(f"Failed to set OID {oid}. Error: {snmp_response.PDU.error}")
+else:
+    print("No response received from the SNMP agent.")
+```
+
+### Explanation of the Modifications:
+
+1. **ASN1_Integer**: Since the value you're setting is an integer, you should use `ASN1_Integer(value)` to encode the integer into the correct ASN.1 format for the SNMP `Set` request.
+
+2. **Example OID**: The OID `1.3.6.1.2.1.2.2.1.7.2` in this example is `ifAdminStatus.2`, which could be used to set the status of an interface (e.g., setting it to `1` for up or `2` for down). Replace this OID with the one you need to set.
+
+3. **Integer Value**: The `value` variable is set to `2` in this example, which corresponds to an integer value. Adjust the integer value according to what you need to set.
+
+### Important Considerations:
+
+- **ASN.1 Integer Type**: Ensure that the OID you are setting expects an integer value. If the OID expects another type (e.g., string, boolean, etc.), you'll need to adjust the ASN.1 type accordingly.
+
+- **Write Permissions**: Make sure that the community string you're using has the necessary write permissions, or the SNMP agent will reject the `Set` request.
+
+### Common Use Case Example:
+
+- **Setting Interface Status**: For example, setting the `ifAdminStatus` OID to `1` or `2` to administratively enable or disable a network interface.
+
+By adjusting the value and OID to fit your specific needs, this script should allow you to perform SNMP `Set` operations with integer values using Scapy. If you encounter issues, double-check that the OID supports `Set` operations and accepts integer values
+.
+
+
+---------------
+from scapy.all import *
+from scapy.layers.snmp import SNMP, SNMPset, SNMPvarbind
+from scapy.layers.inet import IP, UDP
+
+# Define the target IP and the SNMP community
+target_ip = "192.168.1.1"  # Replace with the actual IP of the SNMP agent
+community = "private"      # Replace with the correct community string (write access)
+
+# Define the OID and the value you want to set
+oid = "1.3.6.1.2.1.1.5.0"  # Replace with the OID you want to set (e.g., sysName.0)
+value = "NewDeviceName"     # Replace with the value you want to set
+
+# Convert the value to the appropriate ASN.1 type (e.g., OctetString for a string)
+asn1_value = ASN1_OctetString(value)
+
+# Create the SNMP Set request packet
+pkt = IP(dst=target_ip)/UDP(sport=RandShort(), dport=161)/SNMP(community=community, PDU=SNMPset(varbindlist=[SNMPvarbind(oid=oid, value=asn1_value)]))
+
+# Send the packet and receive the response
+response = sr1(pkt, timeout=2, verbose=0)
+
+# Check if we got a response
+if response and response.haslayer(SNMP):
+    snmp_response = response.getlayer(SNMP)
+    if snmp_response.PDU.error.status == 0:
+        print(f"Successfully set OID {oid} to {value}.")
+    else:
+        print(f"Failed to set OID {oid}. Error: {snmp_response.PDU.error}")
+else:
+    print("No response received from the SNMP agent.")
