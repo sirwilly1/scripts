@@ -1,0 +1,31 @@
+import argparse
+import yaml
+import os
+
+def main():
+    # Setup argparse to read the input YAML file
+    parser = argparse.ArgumentParser(description="Read and validate a YAML file.")
+    parser.add_argument("yaml_file", type=str, help="Path to the YAML file.")
+    args = parser.parse_args()
+
+    # Validate that the file has a .yaml or .yml extension
+    if not args.yaml_file.endswith(('.yaml', '.yml')):
+        print("Error: The file does not have a valid YAML extension (.yaml or .yml).")
+        return
+
+    # Validate that the file exists
+    if not os.path.isfile(args.yaml_file):
+        print(f"Error: The file '{args.yaml_file}' does not exist.")
+        return
+
+    # Try to load the YAML file
+    try:
+        with open(args.yaml_file, 'r') as file:
+            yaml.safe_load(file)
+        print("YAML file is valid.")
+    except yaml.YAMLError as e:
+        print(f"Error: The file '{args.yaml_file}' is not a valid YAML file.")
+        print(e)
+
+if __name__ == "__main__":
+    main()
