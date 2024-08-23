@@ -29,3 +29,26 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+---------
+import argparse
+import yaml
+
+def main():
+    # Setup argparse to read the input YAML file
+    parser = argparse.ArgumentParser(description="Check if a file is a valid YAML file.")
+    parser.add_argument("yaml_file", type=str, help="Path to the YAML file.")
+    args = parser.parse_args()
+
+    # Try to load the YAML file
+    try:
+        with open(args.yaml_file, 'r') as file:
+            yaml.safe_load(file)
+        print("YAML file is valid.")
+    except (yaml.YAMLError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
