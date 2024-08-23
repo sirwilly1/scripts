@@ -114,3 +114,50 @@ int main() {
 2. Static variables will retain their values across function calls but are limited in scope to the file they are declared in.
 
 Let me know if you need any adjustments!
+
+
+
+
+-----------
+To convert your static variables into a `struct` called `statics_t`, you can follow these steps:
+
+1. **Define the `struct statics_t`**: Inside the structure, declare the variables that you want to make static.
+
+2. **Initialize the struct instance as static**: Replace the individual static variables with a single static instance of the `struct`.
+
+Here’s how you can do it:
+
+### Original Static Variables:
+```c
+static int var1 = 0;
+static float var2 = 0.0f;
+static char var3 = 'A';
+```
+
+### Converted to `struct statics_t`:
+```c
+struct statics_t {
+    int var1;
+    float var2;
+    char var3;
+};
+
+// Initialize the static instance of the struct
+static struct statics_t statics = {0, 0.0f, 'A'};
+```
+
+### Accessing the Variables:
+Now, instead of accessing the individual static variables, you access them through the struct instance:
+
+```c
+// Accessing var1
+statics.var1 = 10;
+
+// Accessing var2
+statics.var2 = 3.14f;
+
+// Accessing var3
+statics.var3 = 'B';
+```
+
+This approach groups all your static variables into a single `struct`, which makes the code more organized and maintainable.
