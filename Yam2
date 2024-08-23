@@ -52,3 +52,65 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+---------
+Here's a template for a `struct` called `Statics_T` that holds static variables in C, followed by an example of how to use it:
+
+### Template for `Statics_T` Struct
+```c
+typedef struct {
+    static int counter;
+    static float ratio;
+    static char *status;
+} Statics_T;
+
+// Function to initialize static variables (optional, if needed)
+void initialize_statics(void) {
+    static int initialized = 0;
+    if (!initialized) {
+        Statics_T.counter = 0;
+        Statics_T.ratio = 1.0f;
+        Statics_T.status = "Initialized";
+        initialized = 1;
+    }
+}
+```
+
+### Example of Using `Statics_T` in C
+```c
+#include <stdio.h>
+
+typedef struct {
+    static int counter;
+    static float ratio;
+    static char *status;
+} Statics_T;
+
+// Define the static variables outside the struct
+static int Statics_T::counter = 0;
+static float Statics_T::ratio = 1.0f;
+static char* Statics_T::status = "Initialized";
+
+// Function to increment the counter
+void increment_counter(void) {
+    Statics_T.counter++;
+}
+
+int main() {
+    // Access and modify static variables
+    increment_counter();
+    printf("Counter: %d\n", Statics_T.counter);
+    printf("Ratio: %.2f\n", Statics_T.ratio);
+    printf("Status: %s\n", Statics_T.status);
+
+    return 0;
+}
+```
+
+### Notes:
+1. In C, you cannot have static variables directly inside a `struct`. Therefore, you need to define them outside the `struct` with a similar name. The template and example above illustrate this workaround.
+2. Static variables will retain their values across function calls but are limited in scope to the file they are declared in.
+
+Let me know if you need any adjustments!
