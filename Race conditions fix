@@ -1,0 +1,124 @@
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define QUEUE_SIZE 10
+
+int queue[QUEUE_SIZE];
+int front = 0, rear = 0, count = 0;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_producer = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_consumer = PTHREAD_COND_INITIALIZER;
+
+void* producer(void* arg) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == QUEUE_SIZE) {
+            pthread_cond_wait(&cond_producer, &mutex); // Wait until there is space in the queue
+        }
+
+        // Produce an item and add it to the queue
+        int item = rand() % 100;  // Example item
+        queue[rear] = item;
+        rear = (rear + 1) % QUEUE_SIZE;
+        count++;
+
+        printf("Produced: %d\n", item);
+
+        pthread_cond_signal(&cond_consumer);  // Signal the consumer
+        pthread_mutex_unlock(&mutex);
+
+        sleep(1); // Simulate time taken to produce an item
+    }
+    return NULL;
+}
+
+void* consumer(void* arg) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+
+        while (count == 0) {
+            pthread_cond_wait(&cond_consumer, &mutex); // Wait until there is an item to consume
+        }
+
+        // Consume an item from the queue
+        int item = queue[front];
+        front = (front + 1) % QUEUE_SIZE;
+        count--;
+
+        printf("Consumed: %d\n", item);
+
+        pthread_cond_signal(&cond_producer);  // Signal the producer
+        pthread_mutex_unlock(&mutex);
+
+        sleep(1); // Simulate time taken to consume an item
+    }
+    return NULL;
+}
+
+int main() {
+    pthread_t prod_thread, cons_thread;
+
+    pthread_create(&prod_thread, NULL, producer, NULL);
+    pthread_create(&cons_thread, NULL, consumer, NULL);
+
+    pthread_join(prod_thread, NULL);
+    pthread_join(cons_thread, NULL);
+
+    return 0;
+}
+
+
+
+----------------
+### 1. **Initialization**
+   - **Queue and Pointers**: 
+     - A circular queue (`queue`) of size 10 is created.
+     - `front` and `rear` pointers are used to keep track of the front and rear of the queue.
+     - `count` keeps track of the number of items in the queue.
+   - **Mutex and Condition Variables**: 
+     - A mutex (`mutex`) is initialized to ensure that only one thread accesses the queue at a time.
+     - Two condition variables (`cond_producer` and `cond_consumer`) are initialized to signal the producer and consumer when the queue is not full or not empty, respectively.
+
+### 2. **Producer Thread (`producer` function)**
+   - The producer thread runs in an infinite loop.
+   - **Locking**: The producer locks the mutex to gain exclusive access to the queue.
+   - **Condition Check**: 
+     - If the queue is full (`count == QUEUE_SIZE`), the producer waits on the `cond_producer` condition variable until a consumer consumes an item, making space in the queue.
+   - **Producing and Enqueueing**:
+     - The producer generates a random item and adds it to the queue.
+     - The `rear` pointer is updated, and `count` is incremented.
+     - A message is printed indicating the produced item.
+   - **Signaling and Unlocking**: 
+     - The producer signals the consumer (`cond_consumer`) that an item is available.
+     - The mutex is then unlocked to allow the consumer to access the queue.
+   - **Delay**: The producer sleeps for 1 second to simulate time taken to produce the next item.
+
+### 3. **Consumer Thread (`consumer` function)**
+   - The consumer thread also runs in an infinite loop.
+   - **Locking**: The consumer locks the mutex to gain exclusive access to the queue.
+   - **Condition Check**: 
+     - If the queue is empty (`count == 0`), the consumer waits on the `cond_consumer` condition variable until the producer adds an item to the queue.
+   - **Consuming and Dequeueing**:
+     - The consumer removes an item from the queue.
+     - The `front` pointer is updated, and `count` is decremented.
+     - A message is printed indicating the consumed item.
+   - **Signaling and Unlocking**: 
+     - The consumer signals the producer (`cond_producer`) that there is space available in the queue.
+     - The mutex is then unlocked to allow the producer to access the queue.
+   - **Delay**: The consumer sleeps for 1 second to simulate time taken to consume the next item.
+
+### 4. **Thread Creation (`main` function)**
+   - Two threads are created:
+     - `prod_thread` for the producer function.
+     - `cons_thread` for the consumer function.
+   - **Joining**:
+     - The `pthread_join` calls ensure that the main thread waits for both the producer and consumer threads to finish execution (which in this infinite loop example means they will run indefinitely).
+
+### Summary:
+- The producer and consumer threads run concurrently.
+- They coordinate through the use of mutex locks and condition variables to avoid race conditions.
+- The producer adds items to the queue, and the consumer removes items, both ensuring the queue is never overfilled or underflowed.
+- The `pthread_cond_wait` and `pthread_cond_signal` calls help manage when each thread should pause or resume work based on the state of the queue.
