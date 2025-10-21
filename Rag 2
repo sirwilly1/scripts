@@ -1,0 +1,12 @@
+
+	•	Implemented Retrieval-Augmented Generation (RAG) architecture within a multi-user Discord bot, integrating Ollama (LLaMA models) and ChromaDB for local, privacy-preserving knowledge retrieval.
+	•	Engineered a message-embedding pipeline that chunked, vectorized, and indexed user messages with metadata (guild, channel, user scope) to enable contextual long-term memory across sessions.
+	•	Developed scoped retrieval logic combining per-user, per-channel, and global guild contexts to deliver personalized, memory-aware responses while optimizing for relevance and latency.
+	•	Designed adaptive prompt construction and generation workflow, dynamically composing retrieved context into structured LLM prompts, yielding grounded, explainable answers with explicit memory 
+
+
+
+	•	Built a Retrieval-Augmented Generation (RAG) system for a multi-user Discord bot using LLaMA and ChromaDB for contextual, memory-aware responses.
+	•	Designed a message-embedding pipeline to index and retrieve user data across channels and sessions.
+	•	Implemented scoped memory retrieval and adaptive prompt construction for personalized, grounded outputs.
+	•	Delivered a self-hosted, privacy-preserving AI assistant with persistent conversational 
