@@ -1,0 +1,324 @@
+Great — let’s set up a safe, local lab for academic testing (isolated from any production network) and a repeatable Caliper-based stress test with a ramp/soak profile. I’ll give you:
+	•	quick prerequisites & environment notes
+	•	a ready-to-copy docker-compose + minimal crypto instructions to stand up a 2-org, 2-peer + 3-node Raft ordering test network (lab only)
+	•	a Caliper benchmark config + example chaincode invocation to run controlled ramped load (warmup → ramp → soak → cooldown)
+	•	a small runbook script that automates baseline → stress → collect metrics via docker stats + Caliper report output
+	•	safety reminders / rollback tips
+
+I’ll avoid any destructive commands and keep everything runnable locally. If you want, after this I can replace the docker-compose with the canonical fabric-samples/test-network flow (which is preferred in many labs) — but the snippets below are self-contained so you can get started quickly.
+
+⸻
+
+0) Preconditions — what you need (local laptop or VM)
+
+Recommended: Ubuntu 20.04/22.04 or similar Linux VM with ≥ 8GB RAM (for small lab), Docker + docker-compose, Node.js (16+), npm, and git.
+
+Install essentials (Ubuntu example):
+
+# Docker & docker-compose
+sudo apt update && sudo apt install -y apt-transport-https ca-certificates curl gnupg lsb-release
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update && sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose
+sudo usermod -aG docker "$USER"    # log out/in to apply
+
+# Node & npm
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Git
+sudo apt-get install -y git
+
+Notes:
+	•	Use a VM that is fully isolated from production networks. If testing with cloud VMs, ensure a dedicated subnet and permission.
+	•	You will need Fabric container images and chaincode runtime images that match your Fabric version (we’re targeting v2.x style). You can either pull the hyperledger/fabric images from Docker Hub or use the scripts in fabric-samples to download matching binaries and images.
+
+⸻
+
+1) Project layout (create this folder)
+
+fabric-lab/
+├─ docker-compose-fabric-lab.yml
+├─ crypto/
+├─ caliper/
+│  ├─ benchmark-config.yaml
+│  └─ networks/
+│     └─ connection-profile.json
+├─ chaincode/
+│  └─ simplecc/
+│     └─ index.js   (or Go code)
+└─ run_tests.sh
+
+I’ll provide the contents for the key files below.
+
+⸻
+
+2) Minimal docker-compose to bring up a lab Fabric network
+
+Create docker-compose-fabric-lab.yml:
+
+This is a minimal, self-contained example for a lab. It uses official Fabric images; be sure images match the Fabric version you intend to use. For a production-like setup use the canonical fabric-samples/test-network scripts (recommended) — this compose is enough to experiment locally.
+
+version: '3.7'
+
+services:
+  orderer1.example.com:
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - ORDERER_GENERAL_LOGLEVEL=info
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_GENESISFILE=/var/hyperledger/orderer/orderer.genesis.block
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+    volumes:
+      - ./crypto/ordererOrganizations/example.com/orderers/orderer1.example.com/msp:/var/hyperledger/orderer/msp
+      - ./crypto/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
+    ports:
+      - 7050:7050
+
+  orderer2.example.com:
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - ORDERER_GENERAL_LOGLEVEL=info
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+    volumes:
+      - ./crypto/ordererOrganizations/example.com/orderers/orderer2.example.com/msp:/var/hyperledger/orderer/msp
+    ports:
+      - 8050:7050
+
+  orderer3.example.com:
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - ORDERER_GENERAL_LOGLEVEL=info
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+    volumes:
+      - ./crypto/ordererOrganizations/example.com/orderers/orderer3.example.com/msp:/var/hyperledger/orderer/msp
+    ports:
+      - 9050:7050
+
+  peer0.org1.example.com:
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_PEER_ID=peer0.org1.example.com
+      - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.example.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_LOGGING_LEVEL=INFO
+    volumes:
+      - ./crypto/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp:/etc/hyperledger/fabric/msp
+    ports:
+      - 7051:7051
+
+  peer0.org2.example.com:
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_PEER_ID=peer0.org2.example.com
+      - CORE_PEER_ADDRESS=peer0.org2.example.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.example.com:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.example.com:8051
+      - CORE_PEER_LOCALMSPID=Org2MSP
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_LOGGING_LEVEL=INFO
+    volumes:
+      - ./crypto/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/msp:/etc/hyperledger/fabric/msp
+    ports:
+      - 8051:8051
+
+  ca.org1.example.com:
+    image: hyperledger/fabric-ca:1.5
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+    command: sh -c 'fabric-ca-server start -b admin:adminpw'
+    ports:
+      - 7054:7054
+    volumes:
+      - ./crypto/ca/org1:/etc/hyperledger/fabric-ca-server-config
+
+  couchdb_org1:
+    image: couchdb:3.1
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    ports:
+      - 5984:5984
+
+Notes:
+	•	The crypto/ directory must contain MSPs, genesis block, and crypto generated for a test network. To create those artifacts quickly, you can either:
+	•	Use the cryptogen and configtxgen binaries (fabric-samples has scripts: ./byfn.sh or network.sh), or
+	•	Use fabric-ca to register & enroll identities and generate MSPs manually.
+	•	For brevity I listed a small set of services. The official fabric-samples has a test-network that automates certificate generation and channel creation and is the recommended long-term approach. This snippet is a starting point if you prefer crafting your own compose.
+
+⸻
+
+3) Simple chaincode (very small) — so Caliper has something to call
+
+Example Node chaincode (chaincode/simplecc/index.js):
+
+'use strict';
+const { Contract } = require('fabric-contract-api');
+
+class SimpleContract extends Contract {
+  async Init(ctx) { return; }
+
+  async CreateAsset(ctx, id, value) {
+    await ctx.stub.putState(id, Buffer.from(value));
+    return true;
+  }
+
+  async ReadAsset(ctx, id) {
+    const data = await ctx.stub.getState(id);
+    if (!data || data.length === 0) {
+      throw new Error('Asset not found: ' + id);
+    }
+    return data.toString();
+  }
+}
+
+module.exports = SimpleContract;
+
+Package, install, and deploy chaincode as you normally would in a test network (see fabric-samples instructions or use the SDKs to install/approve/commit).
+
+⸻
+
+4) Caliper benchmark config (ramp/soak)
+
+Create caliper/benchmark-config.yaml:
+
+caliper:
+  blockchain: fabric
+  command: benchmark
+  arguments:
+    network-config: ./networks/connection-profile.json
+    benchmark: ./benchmarks/simple-benchmark.yaml
+
+benchmarks:
+  - label: simple-ramp-soak
+    description: Create and Query ramp/soak test
+    workers:
+      type: local
+      number: 2
+    rounds:
+      - label: warmup
+        txNumber: 50
+        rateControl:
+          type: fixed-rate
+          opts:
+            tps: 10
+        arguments:
+          chaincodeFunction: "CreateAsset"
+          chaincodeArguments: ["asset-warmup", "1"]
+      - label: ramp
+        txNumber: 1000
+        rateControl:
+          type: fixed-rate
+          opts:
+            tps: 100
+        arguments:
+          chaincodeFunction: "CreateAsset"
+          chaincodeArguments: ["asset-ramp", "123"]
+      - label: peak
+        txNumber: 5000
+        rateControl:
+          type: fixed-rate
+          opts:
+            tps: 400
+        arguments:
+          chaincodeFunction: "CreateAsset"
+          chaincodeArguments: ["asset-peak", "999"]
+      - label: soak
+        txNumber: 2000
+        rateControl:
+          type: fixed-rate
+          opts:
+            tps: 200
+        arguments:
+          chaincodeFunction: "ReadAsset"
+          chaincodeArguments: ["asset-peak"]
+
+You’ll also need a benchmarks/simple-benchmark.yaml (referencing chaincode ID and channel) and a valid networks/connection-profile.json describing your test network. Caliper docs show the shape of those files; the connection profile is basically the Fabric network JSON used by SDKs (peer/orderer endpoints, channel, msp).
+
+Install Caliper CLI globally and run:
+
+# install caliper (example)
+npm install -g @hyperledger/caliper-cli
+# in caliper folder
+caliper launch manager --caliper-workspace . --caliper-benchconfig benchmark-config.yaml --caliper-networkconfig ./networks/connection-profile.json
+
+Caliper will run benchmarks and output reports (latency, throughput, success/failed tx counts). Keep the reports.
+
+⸻
+
+5) Runbook script: baseline → ramped stress → collect metrics
+
+Create run_tests.sh (make executable):
+
+#!/usr/bin/env bash
+set -e
+
+# 1) start the network (docker compose)
+echo "[*] Starting fabric lab (docker-compose up -d)"
+docker-compose -f docker-compose-fabric-lab.yml up -d
+sleep 8
+
+# TODO: deploy chaincode & create channel (manual or script). This script assumes channel and chaincode are ready.
+
+# 2) Baseline: small Caliper run
+echo "[*] Running baseline (10 TPS, short)"
+caliper launch manager --caliper-workspace ./caliper --caliper-benchconfig ./caliper/benchmark-config.yaml --caliper-networkconfig ./caliper/networks/connection-profile.json --caliper-flow-only-test --caliper-fabric-gateway false
+
+# 3) Monitor system via docker stats background (record for the run)
+echo "[*] Capturing docker stats to docker-stats.log (will run in background)"
+docker stats --no-stream > docker-stats-baseline.log &
+
+# 4) Ramped stress runs (Caliper handled ramp/soak)
+echo "[*] Running ramp/soak stress (see Caliper config for exact TPS)"
+caliper launch manager --caliper-workspace ./caliper --caliper-benchconfig ./caliper/benchmark-config.yaml --caliper-networkconfig ./caliper/networks/connection-profile.json
+
+# 5) Collect docker stats once more
+docker stats --no-stream > docker-stats-after.log || true
+
+echo "[*] Tests done. Reports are in the Caliper report folder and docker-stats-*.log"
+
+Notes:
+	•	The script purposely keeps the chaincode deploy / channel creation step manual — this is safer so you follow standard Fabric procedures (approve/commit lifecycle). If you want, I can script the full channel create / chaincode deploy steps.
+	•	--caliper-flow-only-test option or flags can be used to change behavior; check the Caliper version you have for exact flags.
+
+⸻
+
+6) Collecting metrics / monitoring (simple)
+
+If you want quick system-level metrics, use docker stats (CPU/memory) during runs. Example command to continuously log:
+
+docker stats --no-stream --format "table {{.Container}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" > docker-stats-$(date +%s).log
+
+For better analysis, spin up Prometheus + Grafana and:
+	1.	expose container metrics via cAdvisor or use node_exporter on the VM.
+	2.	Configure Prometheus to scrape output and build simple dashboards for CPU/Memory, plus Caliper result imports (Caliper produces JSON reports you can parse into dashboards).
+
+If you want, I’ll produce a minimal Prometheus prometheus.yml and Grafana dashboard JSON that scrapes cadvisor and shows CPU/mem for peer/orderer containers.
+
+⸻
+
+7) Safe testing practices & limits
+	•	ALWAYS run in an isolated lab environment. Do not point stress tooling at any network you do not control or have explicit written permission to test.
+	•	Keep conservative TPS values first (10, 50, 100) and inspect system metrics before increasing.
+	•	Keep backups of ledger and crypto/ data. If a run corrupts state, you can tear down and recreate the network easily.
+	•	If peers/orderers crash or misbehave, stop tests immediately (CTRL+C or stop caliper), docker-compose down, restore from backup or crypto/ regen.
+
+⸻
+
+8) Next steps I can do for you (pick any or multiple)
+	1.	Generate a full channel & chaincode deploy script (approve/commit lifecycle) so the run_tests.sh is fully automated.
+	2.	Produce a complete Caliper workspace with benchmarks/simple-benchmark.yaml, networks/connection-profile.json, and a validated command you can run; I’ll tailor it to Fabric v2.5 specifics.
+	3.	Add Prometheus + Grafana compose snippets + a Grafana dashboard JSON that shows peer/orderer CPU, mem, and Caliper tx/s over time.
+	4.	Convert this to use the canonical fabric-samples/test-network flow (recommended) and give exact commands to ./network.sh up createChannel deployCC for Fabric v2.5 images (I can paste the exact commands).
+
+Which one do you want me to create next? If you want full automation, say “Make it fully automated (option 1+2+3)”, and I’ll produce the scripts and files to paste into your lab.
