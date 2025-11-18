@@ -1,0 +1,14 @@
+# Inside the send_transaction function, change the requests.post line to this:
+
+# ... (rest of the function is the same)
+try:
+    # INSECURE: Disables SSL certificate verification
+    response = requests.post(url, headers=headers, data=json.dumps(payload), verify=False)
+    response.raise_for_status()
+    print(f"Transaction {tx_id} sent successfully. Status: {response.status_code}")
+except RequestException as e:
+    print(f"Failed to send transaction {tx_id}. Error: {e}")
+
+
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
