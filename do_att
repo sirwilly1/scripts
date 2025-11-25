@@ -64,34 +64,32 @@ def moving_average(data, window):
     return sum(data[-w:]) / w
 
 
-def render_failures_panel(data, max_columns):
+def render_failures_panel(all_data, max_columns):
     """Top panel: failures per second with colors, MA, spikes, etc."""
-    if not data:
+    if not all_data:
         return Panel("Waiting for failure data...", title="Failures per Second (Realtime)")
 
     # Smooth scrolling / crop to width
-    if len(data) > max_columns:
-        data = data[-max_columns:]
+    data = all_data[-max_columns:]
 
+    window_seconds = len(data)
     real_max_val = max(data)
     real_min_val = min(data)
     last_val = data[-1]
     prev_val = data[-2] if len(data) >= 2 else None
     avg_val = moving_average(data, MOVING_AVG_WINDOW)
-    window_seconds = len(data)
 
-    # Handle all-zero data gracefully
+    # If everything in the visible window is zero, draw a flat line and bail early
     if real_max_val == 0 and real_min_val == 0:
-        # Just draw a single "0" level with blanks + basic info
         label = "  0 │" + " " * len(data)
         axis = "    └" + ("─" * len(data))
         info_line = f"Last {window_seconds} seconds | all failure counts are 0"
         chart_text = label + "\n" + axis + "\n\n" + info_line
         return Panel(chart_text, title="Failures per Second (Realtime)")
 
-    # For indexing, we must use the actual max/min that are in the data
-    max_idx = len(data) - 1 - list(reversed(data)).index(real_max_val)
-    min_idx = len(data) - 1 - list(reversed(data)).index(real_min_val)
+    # For indexing, use simple loops (cannot fail)
+    max_idx = max(range(len(data)), key=lambda i: data[i])
+    min_idx = min(range(len(data)), key=lambda i: data[i])
 
     # For Y-axis scaling, ensure we don't divide by 0
     scaled_max_val = max(real_max_val, 1)
@@ -161,19 +159,18 @@ def render_failures_panel(data, max_columns):
     return Panel(chart_text, title="Failures per Second (Realtime)")
 
 
-def render_total_requests_panel(cumulative_data, max_columns):
+def render_total_requests_panel(all_cumulative, max_columns):
     """Bottom panel: total requests over time (cumulative)."""
-    if not cumulative_data:
+    if not all_cumulative:
         return Panel("Waiting for request data...", title="Total Requests Over Time")
 
-    # Crop to visible width
-    if len(cumulative_data) > max_columns:
-        cumulative_data = cumulative_data[-max_columns:]
+    cumulative_data = all_cumulative[-max_columns:]
 
+    window_seconds = len(cumulative_data)
     real_max_val = max(cumulative_data)
     real_min_val = min(cumulative_data)
-    window_seconds = len(cumulative_data)
 
+    # If cumulative is still all zero (no requests at all yet)
     if real_max_val == 0 and real_min_val == 0:
         label = "  0 │" + " " * len(cumulative_data)
         axis = "    └" + ("─" * len(cumulative_data))
@@ -220,7 +217,6 @@ def render_total_requests_panel(cumulative_data, max_columns):
 
 def render_dashboard(failure_counts, cumulative_requests, log_exists: bool):
     """Combine both panels into one renderable."""
-    # If log file doesn't exist yet, just show a waiting panel
     if not log_exists:
         return Panel(
             f"Waiting for log file '{LOG_FILE}'...",
