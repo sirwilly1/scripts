@@ -200,22 +200,41 @@ def render_chart(data_points: list[int]) -> Panel:
     if not data_points:
         return Panel("Waiting for data...", title="DoS Monitor")
 
-    # Simple vertical bar chart
     max_val = max(data_points) or 1
-    height = 10  # rows
-    bars = []
+    height = 10  # rows (y-axis levels)
 
-    # Build from top row to bottom row
+    lines = []
+
+    # Decide on integer interval step for labels
+    # (so the labels look like 0, 2, 4, 6... etc)
+    step = max(max_val // height, 1)
+
+    # Build chart from top row to bottom row
     for level in range(height, 0, -1):
-        threshold = max_val * level / height
-        row = []
+        threshold = step * level
+        # label on the left (failures/sec)
+        label = f"{threshold:>3}"
+        row_chars = []
         for v in data_points:
-            row.append("█" if v >= threshold else " ")
-        bars.append("".join(row))
+            row_chars.append("█" if v >= threshold else " ")
+        lines.append(f"{label} |{''.join(row_chars)}")
 
-    chart_lines = "\n".join(bars)
-    info_line = f"\nLast {len(data_points)}s | max/sec={max_val}"
-    return Panel(chart_lines + info_line, title="Failures per Second")
+    # X-axis / info lines
+    # current window length
+    window_len = len(data_points)
+
+    # Simple summaries
+    last_5 = sum(data_points[-5:]) if window_len >= 5 else sum(data_points)
+    last_30 = sum(data_points[-30:]) if window_len >= 30 else sum(data_points)
+    total = sum(data_points)
+
+    info_line = (
+        f"\nLast {window_len}s | max/sec={max_val} | "
+        f"sum(5s)={last_5} | sum(30s)={last_30} | sum(all)={total}"
+    )
+
+    chart_text = "\n".join(lines) + info_line
+    return Panel(chart_text, title="Failures per Second")
 
 
 def main() -> None:
@@ -253,4 +272,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
