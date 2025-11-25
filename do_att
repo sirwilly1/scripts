@@ -2,7 +2,7 @@ import time
 import math
 from pathlib import Path
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 
@@ -18,10 +18,10 @@ REFRESH_INTERVAL = 1.0
 # Threshold for "high" failure rate (color red above this)
 HIGH_FAILURE_THRESHOLD = 10
 
-# Moving average window (seconds)
+# Moving average window (seconds) for failures/sec
 MOVING_AVG_WINDOW = 10
 
-# Spike detection
+# Spike detection (for failures/sec)
 SPIKE_FACTOR = 2.0
 SPIKE_MIN_BASELINE = 3
 # ------------------------------------------
@@ -30,16 +30,30 @@ SPIKE_MIN_BASELINE = 3
 console = Console()
 
 
-def read_failures_since(log_path: Path, last_pos: int):
+def read_counts_since(log_path: Path, last_pos: int):
+    """
+    Read new lines from the log and return:
+    - failures_this_second
+    - requests_this_second
+    - new file position
+
+    Every non-empty line is treated as a request.
+    Any line containing '[FAILURE]' is a failure.
+    """
     failures = 0
+    requests = 0
     with log_path.open("r", encoding="utf-8", errors="ignore") as f:
         f.seek(last_pos)
         lines = f.readlines()
         new_pos = f.tell()
-        for line in lines:
-            if "[FAILURE]" in line:
-                failures += 1
-    return failures, new_pos
+
+    for line in lines:
+        if line.strip():
+            requests += 1        # every line is a request
+        if "[FAILURE]" in line:
+            failures += 1        # subset of requests
+
+    return failures, requests, new_pos
 
 
 def moving_average(data, window):
@@ -49,21 +63,15 @@ def moving_average(data, window):
     return sum(data[-w:]) / w
 
 
-def render_bar_chart(data):
+def render_failures_panel(data, max_columns):
+    """Top panel: failures per second with colors, MA, spikes, etc."""
     if not data:
-        return Panel("Waiting for data...", title="DoS Monitor")
+        return Panel("Waiting for data...", title="Failures per Second (Realtime)")
 
-    # --- Autoresize ---
-    term_width = console.size.width
-    label_width = 4
-    sep_width = 2
-    padding = 6
-    max_columns = max(5, term_width - label_width - sep_width - padding)
-
+    # Smooth scrolling / crop to width
     if len(data) > max_columns:
         data = data[-max_columns:]
 
-    # --- Stats ---
     max_val = max(data) or 1
     min_val = min(data)
     last_val = data[-1]
@@ -71,19 +79,19 @@ def render_bar_chart(data):
     avg_val = moving_average(data, MOVING_AVG_WINDOW)
     window_seconds = len(data)
 
-    # Find max/min indices
+    # Indices of max/min in visible window
     max_idx = len(data) - 1 - list(reversed(data)).index(max_val)
     min_idx = len(data) - 1 - list(reversed(data)).index(min_val)
 
-    # --- Y-axis levels ---
+    # Y-axis levels
     max_height = 12
     step = max(1, math.ceil(max_val / max_height))
     levels = list(range(0, max_val + 1, step))
     if levels[-1] != max_val:
         levels[-1] = max_val
-    levels = sorted(levels, reverse=True)
+    levels = sorted(set(levels), reverse=True)
 
-    # Find moving average level
+    # Level closest to moving average
     avg_level = min(levels, key=lambda lv: abs(lv - avg_val))
 
     lines = []
@@ -95,14 +103,14 @@ def render_bar_chart(data):
         for i, v in enumerate(data):
             char = " "
 
-            # Highlight bars
+            # Bars (colored)
             if v >= level and level != 0:
                 if v >= HIGH_FAILURE_THRESHOLD:
                     color = "red"
                 else:
                     color = "green"
 
-                # Override for max/min points
+                # Highlight max/min
                 if i == max_idx:
                     color = "yellow"
                 elif i == min_idx:
@@ -118,10 +126,9 @@ def render_bar_chart(data):
 
         lines.append(label + "".join(row_chars))
 
-    # X-axis (NO TIME TICKS)
+    # X axis (no tick labels)
     axis = "    └" + ("─" * len(data))
 
-    # Summary info
     max_info = f"max={max_val} at t=-{window_seconds - 1 - max_idx}s"
     min_info = f"min={min_val} at t=-{window_seconds - 1 - min_idx}s"
     avg_info = f"{MOVING_AVG_WINDOW}s MA={avg_val:.2f}"
@@ -136,41 +143,120 @@ def render_bar_chart(data):
     if spike_msg:
         info_line += " | " + spike_msg
 
-    chart = "\n".join(lines) + "\n" + axis + "\n\n" + info_line
+    chart_text = "\n".join(lines) + "\n" + axis + "\n\n" + info_line
 
-    return Panel(chart, title="Failures per Second (Realtime)")
+    return Panel(chart_text, title="Failures per Second (Realtime)")
+
+
+def render_total_requests_panel(cumulative_data, max_columns):
+    """Bottom panel: total requests over time (cumulative)."""
+    if not cumulative_data:
+        return Panel("Waiting for data...", title="Total Requests Over Time")
+
+    # Crop to visible width
+    if len(cumulative_data) > max_columns:
+        cumulative_data = cumulative_data[-max_columns:]
+
+    max_val = max(cumulative_data) or 1
+    min_val = min(cumulative_data)
+    window_seconds = len(cumulative_data)
+
+    max_height = 12
+    step = max(1, math.ceil(max_val / max_height))
+    levels = list(range(0, max_val + 1, step))
+    if levels[-1] != max_val:
+        levels[-1] = max_val
+    levels = sorted(set(levels), reverse=True)
+
+    lines = []
+
+    for level in levels:
+        label = f"{level:>3} │"
+        row_chars = []
+        for v in cumulative_data:
+            if v >= level and level != 0:
+                char = "[blue]█[/]"
+            else:
+                char = " "
+            row_chars.append(char)
+        lines.append(label + "".join(row_chars))
+
+    axis = "    └" + ("─" * len(cumulative_data))
+
+    info_line = (
+        f"Cumulative requests (last {window_seconds} seconds visible) | "
+        f"min={min_val}, max={max_val}"
+    )
+
+    chart_text = "\n".join(lines) + "\n" + axis + "\n\n" + info_line
+
+    return Panel(chart_text, title="Total Requests Over Time")
+
+
+def render_dashboard(failure_counts, cumulative_requests):
+    """Combine both panels into one renderable."""
+    if not failure_counts and not cumulative_requests:
+        return Panel("Waiting for data...", title="DoS Monitor")
+
+    # Shared autoresize width
+    term_width = console.size.width
+    label_width = 4
+    sep_width = 2
+    padding = 6
+    max_columns = max(5, term_width - label_width - sep_width - padding)
+
+    failures_panel = render_failures_panel(failure_counts, max_columns)
+    requests_panel = render_total_requests_panel(cumulative_requests, max_columns)
+
+    return Group(failures_panel, requests_panel)
 
 
 def main():
     log_path = Path(LOG_FILE)
     failure_counts = []
+    request_counts = []
+    cumulative_requests = []
     last_pos = 0
 
+    # Wait for log file
     while not log_path.exists():
         console.print(f"Waiting for log file '{LOG_FILE}'...")
         time.sleep(2)
 
-    with Live(render_bar_chart(failure_counts), console=console, refresh_per_second=4) as live:
+    with Live(render_dashboard(failure_counts, cumulative_requests),
+              console=console, refresh_per_second=4) as live:
         while True:
             try:
-                failures, last_pos = read_failures_since(log_path, last_pos)
+                failures, requests, last_pos = read_counts_since(log_path, last_pos)
             except FileNotFoundError:
                 last_pos = 0
                 failure_counts.clear()
+                request_counts.clear()
+                cumulative_requests.clear()
                 live.update(Panel("Log file not found, waiting...", title="DoS Monitor"))
                 time.sleep(2)
                 continue
 
+            # Per-second series
             failure_counts.append(failures)
-            if len(failure_counts) > MAX_POINTS_ON_CHART:
-                failure_counts.pop(0)
+            request_counts.append(requests)
 
-            live.update(render_bar_chart(failure_counts))
+            # Cumulative requests
+            prev_total = cumulative_requests[-1] if cumulative_requests else 0
+            cumulative_requests.append(prev_total + requests)
+
+            # Smooth scrolling window for all series
+            for lst in (failure_counts, request_counts, cumulative_requests):
+                if len(lst) > MAX_POINTS_ON_CHART:
+                    lst.pop(0)
+
+            live.update(render_dashboard(failure_counts, cumulative_requests))
             time.sleep(REFRESH_INTERVAL)
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
