@@ -274,3 +274,203 @@ if __name__ == "__main__":
     main()
 
 
+
+-------------------
+
+import time
+import math
+from pathlib import Path
+
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+
+# ----------------- CONFIG -----------------
+LOG_FILE = "dos_stealthy_flood.log"
+
+# Max number of points we keep in memory (smooth scrolling window)
+MAX_POINTS_ON_CHART = 120
+
+# How often we poll the log file (seconds)
+REFRESH_INTERVAL = 1.0
+
+# Threshold for "high" failure rate (color red above this)
+HIGH_FAILURE_THRESHOLD = 10
+
+# Moving average window (seconds)
+MOVING_AVG_WINDOW = 10
+
+# Spike detection (factor * previous value)
+SPIKE_FACTOR = 2.0
+SPIKE_MIN_BASELINE = 3  # don't alert on tiny noise
+# ------------------------------------------
+
+
+console = Console()
+
+
+def read_failures_since(log_path: Path, last_pos: int):
+    """Read new lines from log file and count [FAILURE] occurrences."""
+    failures = 0
+    with log_path.open("r", encoding="utf-8", errors="ignore") as f:
+        f.seek(last_pos)
+        lines = f.readlines()
+        new_pos = f.tell()
+        for line in lines:
+            if "[FAILURE]" in line:
+                failures += 1
+    return failures, new_pos
+
+
+def moving_average(data, window):
+    if not data:
+        return 0.0
+    w = min(window, len(data))
+    return sum(data[-w:]) / w
+
+
+def render_bar_chart(data):
+    """Render a real-time bar chart with all the goodies."""
+    if not data:
+        return Panel("Waiting for data...", title="DoS Monitor")
+
+    # --- Autoresize / downsample by width ---
+    term_width = console.size.width
+    # room for label (4) + sep (" │" -> 2) + some padding / panel borders
+    label_width = 4
+    sep_width = 2
+    padding = 6
+    max_columns = max(5, term_width - label_width - sep_width - padding)
+
+    if len(data) > max_columns:
+        data = data[-max_columns:]
+
+    # --- Basic stats ---
+    max_val = max(data) or 1
+    min_val = min(data)
+    last_val = data[-1]
+    prev_val = data[-2] if len(data) >= 2 else None
+    avg_val = moving_average(data, MOVING_AVG_WINDOW)
+
+    # find indices of max/min (last occurrence)
+    max_idx = len(data) - 1 - list(reversed(data)).index(max_val)
+    min_idx = len(data) - 1 - list(reversed(data)).index(min_val)
+
+    # --- Determine y-axis levels ---
+    # Limit vertical height to something reasonable for a terminal
+    max_height = 12
+    step = max(1, math.ceil(max_val / max_height))
+    levels = list(range(0, max_val + 1, step))
+    if levels[-1] != max_val:
+        levels[-1] = max_val  # ensure top is exact max
+    # We'll render from top (highest) to bottom (0)
+    levels = sorted(set(levels), reverse=True)
+
+    # Determine which level is closest to the moving average, for the line
+    avg_level = min(levels, key=lambda lv: abs(lv - avg_val))
+
+    lines = []
+
+    for level in levels:
+        # left axis label
+        label = f"{level:>3} │"
+        row_chars = []
+
+        for i, v in enumerate(data):
+            char = " "
+
+            # Moving average line overlay row
+            is_avg_row = (level == avg_level)
+
+            # Base bar logic
+            if v >= level and level != 0:
+                # Color-coded bars
+                if v >= HIGH_FAILURE_THRESHOLD:
+                    color = "red"
+                else:
+                    color = "green"
+
+                # Max/min indicators override color
+                if i == max_idx:
+                    color = "yellow"
+                elif i == min_idx:
+                    color = "cyan"
+
+                char = f"[{color}]█[/]"
+
+            # If this is the moving average row, draw a line where there is no bar
+            if is_avg_row and v < level:
+                # light dot for moving average line
+                char = "[bright_blue]·[/]"
+
+            row_chars.append(char)
+
+        lines.append(label + "".join(row_chars))
+
+    # --- X-axis and labels ---
+    axis = "    └" + ("─" * len(data))
+
+    # We'll just show an index scale modulo 10 for compactness
+    idx_labels = "".join(str((i + 1) % 10) for i in range(len(data)))
+    time_labels = "     " + idx_labels
+
+    # --- Summary / info lines ---
+    window_seconds = len(data)
+    last_n_label = f"Last {window_seconds} seconds (most recent on the right)"
+
+    max_info = f"max={max_val} at t=-{window_seconds - 1 - max_idx}s"
+    min_info = f"min={min_val} at t=-{window_seconds - 1 - min_idx}s"
+    avg_info = f"{MOVING_AVG_WINDOW}s MA={avg_val:.2f}"
+
+    # Spike alert
+    spike_msg = ""
+    if prev_val is not None:
+        if last_val >= SPIKE_MIN_BASELINE and last_val >= prev_val * SPIKE_FACTOR:
+            spike_msg = f"[bold red]SPIKE![/] last={last_val} prev={prev_val}"
+
+    info_line = (
+        f"{last_n_label} | {max_info} | {min_info} | {avg_info}"
+    )
+    if spike_msg:
+        info_line += " | " + spike_msg
+
+    chart = "\n".join(lines) + "\n" + axis + "\n" + time_labels + "\n\n" + info_line
+
+    return Panel(chart, title="Failures per Second (Realtime)")
+
+
+def main():
+    log_path = Path(LOG_FILE)
+    failure_counts = []
+    last_pos = 0
+
+    # Wait for log file
+    while not log_path.exists():
+        console.print(f"Waiting for log file '{LOG_FILE}'...")
+        time.sleep(2)
+
+    with Live(render_bar_chart(failure_counts), console=console, refresh_per_second=4) as live:
+        while True:
+            try:
+                failures, last_pos = read_failures_since(log_path, last_pos)
+            except FileNotFoundError:
+                last_pos = 0
+                failure_counts.clear()
+                live.update(Panel("Log file not found, waiting...", title="DoS Monitor"))
+                time.sleep(2)
+                continue
+
+            # Smooth scrolling window
+            failure_counts.append(failures)
+            if len(failure_counts) > MAX_POINTS_ON_CHART:
+                failure_counts.pop(0)
+
+            live.update(render_bar_chart(failure_counts))
+
+            time.sleep(REFRESH_INTERVAL)
+
+
+if __name__ == "__main__":
+    main()
+
+
