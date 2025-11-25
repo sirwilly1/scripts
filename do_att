@@ -169,27 +169,27 @@ if __name__ == "__main__":
 -------------------
 
 import asyncio
-import time
+from pathlib import Path
+
 from textual.app import App, ComposeResult
 from textual.containers import Container
 from textual.widgets import Header, Footer, Static
+
 import plotext as plt
-from pathlib import Path
 
 # --- Configuration ---
 # This MUST match the log file name used in your attack script.
-LOG_FILE = "dos_stealthy_flood.log" 
+LOG_FILE = "dos_stealthy_flood.log"
 # How many seconds of data to display on the chart.
-MAX_POINTS_ON_CHART = 60 
+MAX_POINTS_ON_CHART = 60
+
 
 class PlotDisplay(Static):
     """A widget to display the plotext chart."""
-    
-    def render_chart(self, data_points):
-        """Renders the chart using plotext."""
-        # Clear the previous content
-        self.clear()
-        
+
+    def render_chart(self, data_points: list[int]) -> None:
+        """Render the chart using plotext and show it in this widget."""
+
         # Don't draw if there's not enough data yet
         if not data_points or len(data_points) < 2:
             self.update("Waiting for data...")
@@ -197,31 +197,40 @@ class PlotDisplay(Static):
 
         try:
             # --- Configure plotext ---
-            plt.clear_data()
-            plt.title('Real-Time Failure Rate')
-            plt.xlabel('Time (seconds ago)')
-            plt.ylabel('Failures / Sec')
-            plt.plot(range(len(data_points)), data_points, marker='braille', label='Failures')
-            plt.theme('dark')
-            plt.show(tty=False)
-            
+            plt.clear_data()  # clear previous series
+            plt.theme("dark")
+            plt.title("Real-Time Failure Rate")
+            plt.xlabel("Time (seconds ago)")
+            plt.ylabel("Failures / Sec")
+
+            x_values = list(range(len(data_points)))
+            plt.plot(x_values, data_points, marker="braille", label="Failures")
+
+            # Build the canvas without dumping to the real terminal
+            # In recent plotext versions the recommended combo is show(hide=True)
+            # followed by get_canvas() to get the plot as a string. :contentReference[oaicite:0]{index=0}
+            plt.show(hide=True)
+            plot_text = plt.get_canvas()
+
             # --- Render the plot in the widget ---
-            plot_text = plt.to_string()
             self.update(plot_text)
 
         except Exception as e:
             self.update(f"Error rendering plot: {e}")
 
+
 class AttackMonitor(App):
     """A Textual app to monitor the DoS attack log file."""
-    
+
     CSS = """
     Screen {
         layout: vertical;
     }
+
     Container {
         height: 1fr;
     }
+
     PlotDisplay {
         height: 100%;
         width: 100%;
@@ -234,39 +243,44 @@ class AttackMonitor(App):
         """Compose the UI."""
         yield Header()
         with Container():
+            # Initial text for the plot area
             yield PlotDisplay("Initializing...")
         yield Footer()
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         """Called when the app is mounted."""
-        # Start the background task to monitor the log file
-        self.run_worker(self.monitor_log, exclusive=True)
+        # Start the background task to monitor the log file.
+        # Important: pass an *awaitable* into run_worker, not the function itself.
+        # This is the current pattern in the Textual worker docs. :contentReference[oaicite:1]{index=1}
+        self.run_worker(self.monitor_log(), exclusive=True)
 
     async def monitor_log(self) -> None:
         """Monitors the log file and updates the chart."""
         log_path = Path(LOG_FILE)
-        failure_counts = []
+        failure_counts: list[int] = []
         last_position = 0
+
+        plot_widget = self.query_one(PlotDisplay)
 
         # Wait for the log file to be created by the attack script
         while not log_path.exists():
-            self.query_one(PlotDisplay).update(f"Waiting for log file '{LOG_FILE}'...")
+            plot_widget.update(f"Waiting for log file '{LOG_FILE}'...")
             await asyncio.sleep(2)
 
         while True:
             failures_this_second = 0
-            
+
             try:
-                with open(log_path, 'r') as f:
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                     # Seek to the last known position
                     f.seek(last_position)
-                    
+
                     # Read new lines
                     new_lines = f.readlines()
-                    
+
                     # Update the last known position
                     last_position = f.tell()
-                    
+
                     # Count failures in the new lines
                     for line in new_lines:
                         if "[FAILURE]" in line:
@@ -275,24 +289,26 @@ class AttackMonitor(App):
             except FileNotFoundError:
                 # Log file was deleted, reset and wait
                 last_position = 0
-                failure_counts = []
-                self.query_one(PlotDisplay).update("Log file not found, waiting...")
+                failure_counts.clear()
+                plot_widget.update("Log file not found, waiting...")
                 await asyncio.sleep(2)
                 continue
-            
+
             # Add the count for this second to our list
             failure_counts.append(failures_this_second)
-            
+
             # Keep the chart from getting too crowded
             if len(failure_counts) > MAX_POINTS_ON_CHART:
                 failure_counts.pop(0)
-            
+
             # Update the chart display
-            self.query_one(PlotDisplay).render_chart(failure_counts)
-            
+            plot_widget.render_chart(failure_counts)
+
             # Wait for 1 second before the next check
             await asyncio.sleep(1)
+
 
 if __name__ == "__main__":
     app = AttackMonitor()
     app.run()
+
