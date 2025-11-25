@@ -42,6 +42,7 @@ def read_counts_since(log_path: Path, last_pos: int):
     """
     failures = 0
     requests = 0
+
     with log_path.open("r", encoding="utf-8", errors="ignore") as f:
         f.seek(last_pos)
         lines = f.readlines()
@@ -49,9 +50,9 @@ def read_counts_since(log_path: Path, last_pos: int):
 
     for line in lines:
         if line.strip():
-            requests += 1        # every line is a request
+            requests += 1
         if "[FAILURE]" in line:
-            failures += 1        # subset of requests
+            failures += 1
 
     return failures, requests, new_pos
 
@@ -66,7 +67,7 @@ def moving_average(data, window):
 def render_failures_panel(data, max_columns):
     """Top panel: failures per second with colors, MA, spikes, etc."""
     if not data:
-        return Panel("Waiting for data...", title="Failures per Second (Realtime)")
+        return Panel("Waiting for failure data...", title="Failures per Second (Realtime)")
 
     # Smooth scrolling / crop to width
     if len(data) > max_columns:
@@ -151,7 +152,7 @@ def render_failures_panel(data, max_columns):
 def render_total_requests_panel(cumulative_data, max_columns):
     """Bottom panel: total requests over time (cumulative)."""
     if not cumulative_data:
-        return Panel("Waiting for data...", title="Total Requests Over Time")
+        return Panel("Waiting for request data...", title="Total Requests Over Time")
 
     # Crop to visible width
     if len(cumulative_data) > max_columns:
@@ -193,12 +194,16 @@ def render_total_requests_panel(cumulative_data, max_columns):
     return Panel(chart_text, title="Total Requests Over Time")
 
 
-def render_dashboard(failure_counts, cumulative_requests):
+def render_dashboard(failure_counts, cumulative_requests, log_exists: bool):
     """Combine both panels into one renderable."""
-    if not failure_counts and not cumulative_requests:
-        return Panel("Waiting for data...", title="DoS Monitor")
+    # If log file doesn't exist yet, just show a waiting panel
+    if not log_exists:
+        return Panel(
+            f"Waiting for log file '{LOG_FILE}'...",
+            title="DoS Monitor",
+        )
 
-    # Shared autoresize width
+    # If we have a log but no data yet, panels will show "Waiting..." messages
     term_width = console.size.width
     label_width = 4
     sep_width = 2
@@ -213,27 +218,42 @@ def render_dashboard(failure_counts, cumulative_requests):
 
 def main():
     log_path = Path(LOG_FILE)
-    failure_counts = []
-    request_counts = []
-    cumulative_requests = []
+    failure_counts: list[int] = []
+    request_counts: list[int] = []
+    cumulative_requests: list[int] = []
     last_pos = 0
 
-    # Wait for log file
-    while not log_path.exists():
-        console.print(f"Waiting for log file '{LOG_FILE}'...")
-        time.sleep(2)
-
-    with Live(render_dashboard(failure_counts, cumulative_requests),
-              console=console, refresh_per_second=4) as live:
+    # Start Live immediately, even if log file doesn't exist yet
+    with Live(
+        Panel(f"Waiting for log file '{LOG_FILE}'...", title="DoS Monitor"),
+        console=console,
+        refresh_per_second=4,
+    ) as live:
         while True:
+            log_exists = log_path.exists()
+
+            if not log_exists:
+                # No log file yet: clear data and show waiting message
+                failure_counts.clear()
+                request_counts.clear()
+                cumulative_requests.clear()
+                live.update(
+                    render_dashboard(failure_counts, cumulative_requests, log_exists=False)
+                )
+                time.sleep(2)
+                continue
+
             try:
                 failures, requests, last_pos = read_counts_since(log_path, last_pos)
             except FileNotFoundError:
+                # Race condition: file deleted between exists() and open()
                 last_pos = 0
                 failure_counts.clear()
                 request_counts.clear()
                 cumulative_requests.clear()
-                live.update(Panel("Log file not found, waiting...", title="DoS Monitor"))
+                live.update(
+                    render_dashboard(failure_counts, cumulative_requests, log_exists=False)
+                )
                 time.sleep(2)
                 continue
 
@@ -250,13 +270,11 @@ def main():
                 if len(lst) > MAX_POINTS_ON_CHART:
                     lst.pop(0)
 
-            live.update(render_dashboard(failure_counts, cumulative_requests))
+            live.update(
+                render_dashboard(failure_counts, cumulative_requests, log_exists=True)
+            )
             time.sleep(REFRESH_INTERVAL)
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
