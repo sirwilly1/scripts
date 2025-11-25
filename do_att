@@ -73,23 +73,35 @@ def render_failures_panel(data, max_columns):
     if len(data) > max_columns:
         data = data[-max_columns:]
 
-    max_val = max(data) or 1
-    min_val = min(data)
+    real_max_val = max(data)
+    real_min_val = min(data)
     last_val = data[-1]
     prev_val = data[-2] if len(data) >= 2 else None
     avg_val = moving_average(data, MOVING_AVG_WINDOW)
     window_seconds = len(data)
 
-    # Indices of max/min in visible window
-    max_idx = len(data) - 1 - list(reversed(data)).index(max_val)
-    min_idx = len(data) - 1 - list(reversed(data)).index(min_val)
+    # Handle all-zero data gracefully
+    if real_max_val == 0 and real_min_val == 0:
+        # Just draw a single "0" level with blanks + basic info
+        label = "  0 │" + " " * len(data)
+        axis = "    └" + ("─" * len(data))
+        info_line = f"Last {window_seconds} seconds | all failure counts are 0"
+        chart_text = label + "\n" + axis + "\n\n" + info_line
+        return Panel(chart_text, title="Failures per Second (Realtime)")
+
+    # For indexing, we must use the actual max/min that are in the data
+    max_idx = len(data) - 1 - list(reversed(data)).index(real_max_val)
+    min_idx = len(data) - 1 - list(reversed(data)).index(real_min_val)
+
+    # For Y-axis scaling, ensure we don't divide by 0
+    scaled_max_val = max(real_max_val, 1)
 
     # Y-axis levels
     max_height = 12
-    step = max(1, math.ceil(max_val / max_height))
-    levels = list(range(0, max_val + 1, step))
-    if levels[-1] != max_val:
-        levels[-1] = max_val
+    step = max(1, math.ceil(scaled_max_val / max_height))
+    levels = list(range(0, scaled_max_val + 1, step))
+    if levels[-1] != scaled_max_val:
+        levels[-1] = scaled_max_val
     levels = sorted(set(levels), reverse=True)
 
     # Level closest to moving average
@@ -130,8 +142,8 @@ def render_failures_panel(data, max_columns):
     # X axis (no tick labels)
     axis = "    └" + ("─" * len(data))
 
-    max_info = f"max={max_val} at t=-{window_seconds - 1 - max_idx}s"
-    min_info = f"min={min_val} at t=-{window_seconds - 1 - min_idx}s"
+    max_info = f"max={real_max_val} at t=-{window_seconds - 1 - max_idx}s"
+    min_info = f"min={real_min_val} at t=-{window_seconds - 1 - min_idx}s"
     avg_info = f"{MOVING_AVG_WINDOW}s MA={avg_val:.2f}"
     last_n_label = f"Last {window_seconds} seconds"
 
@@ -158,15 +170,27 @@ def render_total_requests_panel(cumulative_data, max_columns):
     if len(cumulative_data) > max_columns:
         cumulative_data = cumulative_data[-max_columns:]
 
-    max_val = max(cumulative_data) or 1
-    min_val = min(cumulative_data)
+    real_max_val = max(cumulative_data)
+    real_min_val = min(cumulative_data)
     window_seconds = len(cumulative_data)
 
+    if real_max_val == 0 and real_min_val == 0:
+        label = "  0 │" + " " * len(cumulative_data)
+        axis = "    └" + ("─" * len(cumulative_data))
+        info_line = (
+            f"Cumulative requests (last {window_seconds} seconds visible) | "
+            f"min={real_min_val}, max={real_max_val}"
+        )
+        chart_text = label + "\n" + axis + "\n\n" + info_line
+        return Panel(chart_text, title="Total Requests Over Time")
+
+    scaled_max_val = max(real_max_val, 1)
+
     max_height = 12
-    step = max(1, math.ceil(max_val / max_height))
-    levels = list(range(0, max_val + 1, step))
-    if levels[-1] != max_val:
-        levels[-1] = max_val
+    step = max(1, math.ceil(scaled_max_val / max_height))
+    levels = list(range(0, scaled_max_val + 1, step))
+    if levels[-1] != scaled_max_val:
+        levels[-1] = scaled_max_val
     levels = sorted(set(levels), reverse=True)
 
     lines = []
@@ -186,7 +210,7 @@ def render_total_requests_panel(cumulative_data, max_columns):
 
     info_line = (
         f"Cumulative requests (last {window_seconds} seconds visible) | "
-        f"min={min_val}, max={max_val}"
+        f"min={real_min_val}, max={real_max_val}"
     )
 
     chart_text = "\n".join(lines) + "\n" + axis + "\n\n" + info_line
@@ -203,7 +227,7 @@ def render_dashboard(failure_counts, cumulative_requests, log_exists: bool):
             title="DoS Monitor",
         )
 
-    # If we have a log but no data yet, panels will show "Waiting..." messages
+    # Shared autoresize width
     term_width = console.size.width
     label_width = 4
     sep_width = 2
