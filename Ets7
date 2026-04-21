@@ -39,3 +39,82 @@ What I want from you next is just two things:
 
 1. the result of the Python MultiUSRP(...) test
 2. the first part of /tmp/e320_probe_trace.log around where it starts failing
+
+eThis is a good narrowing result.
+
+You’ve now shown three important things:
+
+* raw MPM RPC works from the host
+* mpm_shell.py can claim and query the E320
+* both uhd_usrp_probe and uhd.usrp.MultiUSRP(...) fail the same way
+
+That means the remaining problem is very likely not control-plane RPC anymore. It is more likely the data/transport side that UHD tries to bring up after MPM succeeds.
+
+The strongest concrete mismatch still visible is your SFP path:
+
+* sfp0 negotiates at 1 Gb/s
+* the E320 guide says for the 1G SFP+ path, both ends should use MTU 1500
+* your E320 still shows MTU 9000 on sfp0
+
+That combination can let small control traffic work while higher-level UHD device creation still fails.
+
+What to do next
+
+On the host, first make sure the host-side SDR NIC is 1500:
+
+sudo ip link set dev enx6c6e072c655a down
+sudo ip link set dev enx6c6e072c655a mtu 1500
+sudo ip link set dev enx6c6e072c655a up
+ip addr show enx6c6e072c655a
+
+On the E320, stop the hardware daemon, bring sfp0 down, change the MTU, then bring it back:
+
+systemctl stop usrp-hwd.service
+ip link set dev sfp0 down
+ip link set dev sfp0 mtu 1500
+ip link set dev sfp0 up
+ip addr show sfp0
+systemctl start usrp-hwd.service
+
+If ip link set dev sfp0 down or mtu 1500 still says Resource busy, reboot the E320 and do the same sequence immediately after it comes back.
+
+After that, retest from the host:
+
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("MultiUSRP created OK")
+    print("Mboard name:", usrp.get_mboard_name())
+    print("Num RX chans:", usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+
+Why I think this is the best next move
+
+You already proved:
+
+* TCP 49601 is reachable
+* MPM claim works
+* MPM methods work
+
+So the next most likely blocker is the network transport configuration UHD needs after claim, and the documented 1G SFP+ MTU for E320 is 1500, not 9000.
+
+Send me the output of:
+
+ip addr show sfp0
+ip addr show enx6c6e072c655a
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("OK", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
