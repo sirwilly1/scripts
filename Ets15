@@ -1,0 +1,131 @@
+That’s fine — then skip the Python streamer on the E320.
+
+The best workaround now is:
+
+Use a built-in UHD capture tool on the E320 and pipe it over SSH to the host
+
+This gives you a live host spectrograph without needing:
+
+* GNU Radio on the E320
+* Python uhd on the E320
+* NumPy on the E320
+
+First, check what UHD capture tool exists on the E320
+
+On the E320, run:
+
+which rx_samples_to_file
+which uhd_rx_cfile
+find /usr /usr/local -type f \( -name 'rx_samples_to_file' -o -name 'uhd_rx_cfile' \) 2>/dev/null
+
+What I want
+
+If you have rx_samples_to_file, that is the easiest path.
+
+⸻
+
+If rx_samples_to_file exists
+
+1) Create a FIFO on the host
+
+On the host:
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+2) Start the SSH stream from the E320 into that FIFO
+
+On the host:
+
+ssh root@192.168.10.2 \
+'rx_samples_to_file --args "type=e3xx,addr=127.0.0.1" \
+ --file /dev/stdout \
+ --type short \
+ --rate 250000 \
+ --freq 100000000 \
+ --gain 20 \
+ --nsamps 0' > /tmp/e320_iq.pipe
+
+Notes:
+
+* addr=127.0.0.1 is for local UHD on the E320
+* --type short gives interleaved int16 IQ, which is easy to ingest on the host
+* --nsamps 0 is intended as continuous streaming on many UHD example builds; if your build rejects that, tell me the exact error
+
+3) Build the host GNU Radio spectrograph
+
+Use this flowgraph on the host:
+
+File Source (short) -> Interleaved Short To Complex -> Multiply Const -> QT GUI Frequency Sink
+                                                                    \-> QT GUI Waterfall Sink
+
+Block settings
+
+File Source
+
+* File: /tmp/e320_iq.pipe
+* Output type: short
+* Repeat: No
+
+Interleaved Short To Complex
+
+* Default settings are fine
+
+Multiply Const
+
+* Constant: 1.0 / 32768.0
+
+QT GUI Frequency Sink
+
+* Input: complex
+* Sample rate: 250e3
+* Center frequency: 100e6
+
+QT GUI Waterfall Sink
+
+* Input: complex
+* Sample rate: 250e3
+* Center frequency: 100e6
+
+4) Startup order
+
+Usually easiest:
+
+1. start the GNU Radio flowgraph on the host
+2. then start the SSH pipe command
+
+If the FIFO blocks, that is normal until the other side opens it.
+
+⸻
+
+If rx_samples_to_file does not exist but uhd_rx_cfile does
+
+Tell me, because the command syntax changes slightly and I’ll give you the exact command for that utility.
+
+⸻
+
+Good first test values
+
+Start with:
+
+* sample rate: 250e3
+* frequency: 100e6
+* gain: 20
+
+Once you see the host waterfall working, increase from there.
+
+⸻
+
+Why this is the best fit now
+
+Because your current situation is:
+
+* host-side remote UHD object creation is broken
+* local UHD on the E320 works
+* E320 lacks GNU Radio + Python uhd + NumPy
+
+So the cleanest path is:
+
+E320 local UHD utility -> stdout -> SSH -> host FIFO -> host GNU Radio spectrograph
+
+Run the which rx_samples_to_file check and send me what exists.
