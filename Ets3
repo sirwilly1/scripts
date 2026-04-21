@@ -1,0 +1,56 @@
+No problem. You can still do the RPC check without tcpdump.
+
+On the E320, open one SSH session and run:
+
+while true; do
+  date
+  busybox netstat -an | grep -E '49600|49601'
+  echo
+  sleep 1
+done
+
+Leave that running.
+
+In a second SSH session on the E320, run:
+
+journalctl -u usrp-hwd.service -f
+
+Then from the host, run these:
+
+python3 - <<'PY'
+import socket
+s = socket.socket()
+s.settimeout(3)
+try:
+    s.connect(("192.168.10.2", 49601))
+    print("TCP 49601 reachable")
+except Exception as e:
+    print("TCP 49601 failed:", e)
+finally:
+    s.close()
+PY
+uhd_find_devices --args "type=e3xx,addr=192.168.10.2"
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+
+What to look for on the E320 netstat loop:
+
+* If you only ever see LISTEN on 0.0.0.0:49601, the service is up but the host is not actually connecting.
+* If you briefly see an ESTABLISHED TCP connection involving 192.168.10.2:49601, the host is reaching MPM RPC.
+* If you see activity on 49600 but nothing on 49601, discovery is happening but RPC is not.
+
+If busybox netstat is too limited, use this instead on the E320:
+
+while true; do
+  date
+  cat /proc/net/tcp /proc/net/udp | grep -iE 'C1C0|C1C1'
+  echo
+  sleep 1
+done
+
+C1C0 is port 49600, and C1C1 is port 49601.
+
+Send me:
+
+1. the host Python socket result,
+2. the host uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2" result,
+3. whatever changes you see in the E320 netstat loop during that probe.
