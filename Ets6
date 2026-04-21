@@ -1,0 +1,104 @@
+Good — this narrows it down a lot.
+
+What your screenshot confirms
+
+Your host tools are consistent:
+
+* uhd_usrp_probe = /usr/local/bin/uhd_usrp_probe
+* uhd_find_devices = /usr/local/bin/uhd_find_devices
+* uhd_config_info = /usr/local/bin/uhd_config_info
+* uhd_config_info --version = UHD 3.15.0-0-gaea0e2de
+* both binaries are linked to:
+
+/usr/local/lib/libuhd.so.3.15.0
+
+So this does not look like a mixed binary/library install anymore.
+
+Also important
+
+Your Python test failed with:
+
+ModuleNotFoundError: No module named 'uhd'
+
+That does not mean UHD itself is broken. It only means the Python bindings for UHD are not installed into that container’s Python environment.
+
+So right now:
+
+* C++ UHD CLI tools exist
+* libuhd exists
+* Python uhd module does not
+
+That is a separate issue.
+
+Where we are now
+
+We have already shown:
+
+* host can reach TCP 49601
+* mpm_shell.py can connect and claim the E320
+* MPM RPC works
+* host UHD binaries and libuhd are from the same /usr/local install
+
+So the remaining failure is likely inside the UHD device-discovery / device-construction path for E3xx, not basic networking or RPC.
+
+Best next move
+
+Since mpm_shell.py works, I want you to use it a little more to confirm the device state while claimed.
+
+In the host container, run again:
+
+cd /workspace/uhd
+unset PYTHONPATH
+export PYTHONPATH=/workspace/uhd/mpm/python
+python3 mpm/tools/mpm_shell.py -c 192.168.10.2
+
+Then inside the shell, run:
+
+get_device_info
+get_last_error
+list_active_overlays
+
+and also:
+
+get_num_timekeepers
+get_mb_eeprom
+
+If one of those names is not exact, run:
+
+list_methods
+
+and pick the closest method names shown.
+
+Why this matters
+
+If MPM says the device is healthy and claimed cleanly, then your failure is almost certainly in UHD host-side E3xx probing, not in the radio itself.
+
+Separate fix: install Python UHD bindings
+
+If you want the Python uhd module available in that container, you likely need to install the UHD Python bindings from your build tree.
+
+From your UHD build directory, that is often one of these patterns:
+
+cd /workspace/uhd/host/build
+make install
+ldconfig
+
+and if Python bindings were not built, rebuild with Python enabled.
+
+First check whether they were built:
+
+find /workspace/uhd/host/build -name 'uhd*.so' 2>/dev/null
+find /usr/local -path '*python*' -name 'uhd*' 2>/dev/null
+
+My read now
+
+You are past the network problem.
+
+You are past the MPM reachability problem.
+
+You are now in one of these two states:
+
+1. MPM is healthy, but uhd_find_devices / uhd_usrp_probe for E3xx are failing in the host UHD path
+2. the device is in a state MPM can report, but UHD doesn’t like during initialization
+
+Run mpm_shell.py -c 192.168.10.2 again and give me the outputs of get_device_info, get_last_error, and list_methods.
