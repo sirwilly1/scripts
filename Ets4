@@ -1,0 +1,96 @@
+That failure is good news.
+
+It does not mean MPM RPC is broken. It means mpm_shell.py is being run from the UHD source tree, but its Python module path is not set up, so it cannot import:
+
+mprpc
+
+What your screenshot proves
+
+You successfully reached this stage:
+
+python3 /workspace/uhd/mpm/tools/mpm_shell.py -c 192.168.10.2
+
+and it failed with:
+
+ModuleNotFoundError: No module named 'mprpc'
+
+So the blocker is now just the host Python environment for the tool.
+
+⸻
+
+Fix the Python path for mpm_shell.py
+
+In that same host container, run:
+
+cd /workspace/uhd
+export PYTHONPATH=/workspace/uhd/mpm/python:/workspace/uhd/host/python:$PYTHONPATH
+python3 /workspace/uhd/mpm/tools/mpm_shell.py -c 192.168.10.2
+
+If that still fails, search for where mprpc actually lives:
+
+find /workspace/uhd -name 'mprpc*' 2>/dev/null
+
+If you find it under a different directory, add that directory to PYTHONPATH too.
+
+⸻
+
+Also try running it from inside the repo root
+
+Sometimes relative imports behave better from the source root:
+
+cd /workspace/uhd
+export PYTHONPATH=/workspace/uhd/mpm/python:/workspace/uhd/host/python:$PYTHONPATH
+python3 mpm/tools/mpm_shell.py -c 192.168.10.2
+
+⸻
+
+Why this matters
+
+If mpm_shell.py works after fixing PYTHONPATH, then:
+
+* host can reach MPM
+* host can talk to RPC at the application level
+* the remaining problem is likely in your UHD host build / probe path, not raw network or RPC reachability
+
+If mpm_shell.py still fails after the import fix, paste the new error.
+
+⸻
+
+Next test after that
+
+In the same container, also run:
+
+which uhd_usrp_probe
+uhd_config_info --version
+ldd "$(which uhd_usrp_probe)" | grep libuhd
+
+Then run this Python test:
+
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("MultiUSRP created OK")
+    mpmc = usrp.get_mpm_client()
+    print("Got MPM client")
+    print("Device info:", mpmc.get_device_info())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+⸻
+
+Most likely outcome
+
+At this point I suspect one of two things:
+
+1. mpm_shell.py will work once PYTHONPATH is fixed
+2. uhd_usrp_probe is loading a mismatched libuhd or mixed install on the host
+
+Your next three outputs should settle that:
+
+* find /workspace/uhd -name 'mprpc*'
+* ldd "$(which uhd_usrp_probe)" | grep libuhd
+* the result of mpm_shell.py after setting PYTHONPATH
