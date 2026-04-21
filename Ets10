@@ -1,0 +1,87 @@
+You found the issue with the Python bindings.
+
+You’re exporting the wrong site-packages path.
+
+Your rebuild output showed the installed UHD Python package here:
+
+/usr/local/lib/python3.8/site-packages/uhd
+
+But you were exporting:
+
+/usr/local/lib/python3/site-packages
+/usr/local/lib/python3/dist-packages
+
+Those are different paths, so Python can’t find the real installed package. When you run from /workspace, Python sometimes picks up the source tree folder named uhd, which is why you saw weird behavior like:
+
+uhd module file: None
+module 'uhd' has no attribute 'usrp'
+
+Use these exact commands
+
+Run this in the host container:
+
+cd /
+unset PYTHONPATH
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages
+python3 - <<'PY'
+import uhd
+print("uhd file:", uhd.__file__)
+print("has usrp:", hasattr(uhd, "usrp"))
+print("dir sample:", [x for x in dir(uhd) if not x.startswith("_")][:20])
+PY
+
+Then test the device:
+
+cd /
+unset PYTHONPATH
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+Also verify the install location directly
+
+find /usr/local/lib -path '*/site-packages/uhd' -o -path '*/dist-packages/uhd'
+python3 -c "import sys; print(sys.version)"
+
+Important rule
+
+Do not run the Python UHD import test from inside /workspace while there is a source tree folder named uhd there.
+
+Use:
+
+cd /
+
+first.
+
+What I expect
+
+Most likely outcomes:
+
+* import uhd starts working once you use /usr/local/lib/python3.8/site-packages
+* then uhd.usrp.MultiUSRP(...) will either work, or fail in the same way as the CLI tools
+* if it still fails the same way, then we’ve fully isolated the issue to the host UHD runtime/device creation path, not Python packaging
+
+Send me the output of:
+
+cd /
+unset PYTHONPATH
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages
+python3 - <<'PY'
+import uhd
+print("uhd file:", uhd.__file__)
+print("has usrp:", hasattr(uhd, "usrp"))
+args = "type=e3xx,addr=192.168.10.2"
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
