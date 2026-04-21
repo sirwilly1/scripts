@@ -1,0 +1,115 @@
+That is a big result.
+
+What you just proved
+
+mpm_shell.py -c 192.168.10.2 works.
+
+From your screenshot, the host was able to:
+
+* connect to 192.168.10.2:49601
+* claim the device
+* call get_device_info
+* list MPM methods
+
+So the following are now confirmed working:
+
+* host ↔ E320 network path
+* TCP RPC reachability
+* MPM RPC protocol
+* device claim path
+
+What this means
+
+The failure is not:
+
+* Ethernet
+* IP routing
+* port 49601 access
+* MPM binding
+* MPM claim
+
+The problem is now much narrower:
+
+uhd_find_devices / uhd_usrp_probe on the host are failing above raw MPM RPC
+
+That usually points to one of these:
+
+1. the host uhd_usrp_probe binary is loading the wrong libuhd
+2. the host install is mixed, partial, or stale
+3. the specific host UHD build path is broken even though MPM itself is fine
+
+Your screenshot already hints at that, because the host probe banner was showing a custom build like:
+
+UHD_3.15.0.HEAD-0-gaea0e2de
+
+That looks like a locally built tree, not a clean distro package.
+
+Most likely root cause now
+
+Host UHD install mismatch or broken host-side probing path.
+
+Because if low-level MPM RPC works and device claim works, but uhd_usrp_probe still says “No devices found,” then the issue is very likely in the host UHD binary/library stack.
+
+Do these exact checks now in the host container
+
+which uhd_usrp_probe
+which uhd_find_devices
+which uhd_config_info
+uhd_config_info --version
+ldd "$(which uhd_usrp_probe)" | grep libuhd
+ldd "$(which uhd_find_devices)" | grep libuhd
+echo "$LD_LIBRARY_PATH"
+
+What I’m looking for
+
+I want to see whether uhd_usrp_probe is loading the libuhd from your intended build/install location, or some other one.
+
+For example, if the binary comes from one install but libuhd comes from another, that would explain this kind of behavior.
+
+Very strong next test
+
+Run this Python test in the same host container:
+
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("MultiUSRP created OK")
+    print("Mboard name:", usrp.get_mboard_name())
+    print("Num RX chans:", usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+How to interpret it
+
+* If this works, then the C++ probe tools are the broken part
+* If this fails, then the host UHD runtime stack itself is broken more generally
+
+My recommendation now
+
+You have enough evidence to stop chasing networking and MPM.
+
+Focus on the host UHD install.
+
+If you want the cleanest fix
+
+Rebuild and install UHD 3.15 fresh in the container, then make sure the runtime picks only that install.
+
+Typical cleanup direction:
+
+rm -rf /usr/local/lib/libuhd*
+rm -rf /usr/local/bin/uhd_*
+ldconfig
+
+then reinstall from your known-good source tree.
+
+But before doing cleanup, get me the output of:
+
+* ldd "$(which uhd_usrp_probe)" | grep libuhd
+* uhd_config_info --version
+* the Python MultiUSRP(...) test
+
+That should identify the exact host-side break.
