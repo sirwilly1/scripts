@@ -1,0 +1,446 @@
+This is enough to make a solid call.
+
+What your latest screenshots prove
+
+You now have all of these true at the same time:
+
+* Host NIC is correct: 192.168.10.1/24, MTU 1500
+* E320 sfp0 is correct: 192.168.10.2/24, MTU 1500
+* The host can reach TCP 49601
+* mpm_shell.py -c 192.168.10.2 works and can:
+    * claim the device
+    * read device info
+    * read EEPROM
+    * list active overlays
+    * query time source
+* But both:
+    * uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+    * uhd.usrp.MultiUSRP("type=e3xx,addr=192.168.10.2")
+    still fail with the same LookupError: KeyError: No devices found
+
+That means the problem is not the Ethernet link, not the MTU anymore, and not basic MPM RPC reachability. The E3xx/E320 control model uses MPM over network RPC, and you have already proven that layer is healthy.
+
+Most likely conclusion
+
+Your blocker is now in the host UHD device-construction path, not in the radio or network.
+
+In plain English:
+
+* low-level control works
+* higher-level UHD host probe/create is what is broken
+
+The highest-probability causes now
+
+1. Your host UHD build is incomplete or slightly wrong for E3xx creation
+
+You are using a custom build:
+
+UHD_3.15.0.HEAD-0-gaea0e2de
+
+That is not a normal distro install. Since mpm_shell.py works but MultiUSRP(...) does not, this strongly points to a host-side UHD build/runtime issue.
+
+2. There may still be a missing host runtime asset or module for the E3xx path
+
+Not the generic library itself — that part is loading — but something specific to the E3xx creation path.
+
+What I would do next
+
+Best engineering move
+
+Do a clean rebuild and reinstall of UHD 3.15 in the host container, from scratch, with no leftovers.
+
+Use this rough sequence inside the container:
+
+cd /workspace/uhd/host
+rm -rf build
+mkdir build
+cd build
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_PYTHON_API=ON
+make -j"$(nproc)"
+make install
+ldconfig
+
+Then verify:
+
+which uhd_usrp_probe
+uhd_config_info --version
+ldd "$(which uhd_usrp_probe)" | grep libuhd
+
+Then retest:
+
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+python3 - <<'PY'
+import uhd
+usrp = uhd.usrp.MultiUSRP("type=e3xx,addr=192.168.10.2")
+print(usrp.get_mboard_name())
+PY
+
+Even better cleanup
+
+Before reinstalling, remove old /usr/local UHD bits so you know you are not mixing installs:
+
+rm -f /usr/local/bin/uhd_*
+rm -f /usr/local/lib/libuhd*
+rm -rf /usr/local/lib/python3/dist-packages/uhd
+ldconfig
+
+Then rebuild and reinstall.
+
+My practical recommendation
+
+At this point, I would stop spending time on the network and radio side.
+
+You have already proven:
+
+* the E320 is alive
+* the E320 is controllable
+* MPM works remotely
+* the link is good
+
+So the shortest path forward is:
+
+Option A
+
+Rebuild host UHD cleanly
+
+Option B
+
+If you need progress immediately, run GNU Radio on the E320 itself and move the data off the device afterward or stream processed data to the host.
+
+Bottom line
+
+You have essentially solved the radio/network problem.
+
+The remaining issue is almost certainly a host UHD software issue.
+
+If you want, I’ll give you a copy-paste ￼ clean UHD 3.15 rebuild script for the container so you can wipe the current host install and reinstall it in one pass.
+
+----------------------
+Use this inside your host container to do a clean UHD 3.15 rebuild/install from your /workspace/uhd source tree.
+
+It will:
+
+* remove old /usr/local UHD binaries/libs/python package
+* rebuild from scratch
+* install
+* run ldconfig
+* print verification info
+
+Save as rebuild_uhd_315.sh:
+
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Clean UHD 3.15 rebuild/install script
+# Assumes UHD source is at /workspace/uhd
+# Run as root inside your container.
+SRC_DIR="${SRC_DIR:-/workspace/uhd}"
+HOST_DIR="$SRC_DIR/host"
+BUILD_DIR="$HOST_DIR/build"
+log() {
+  printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+die() {
+  printf '\n[ERROR] %s\n' "$*" >&2
+  exit 1
+}
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+log "Checking prerequisites..."
+require_cmd cmake
+require_cmd make
+require_cmd ldconfig
+require_cmd find
+require_cmd rm
+[[ -d "$SRC_DIR" ]] || die "UHD source dir not found: $SRC_DIR"
+[[ -d "$HOST_DIR" ]] || die "UHD host dir not found: $HOST_DIR"
+log "Source tree: $SRC_DIR"
+log "Showing current UHD state before cleanup..."
+if command -v uhd_config_info >/dev/null 2>&1; then
+  uhd_config_info --version || true
+else
+  echo "uhd_config_info not currently installed"
+fi
+echo
+echo "Existing UHD binaries in /usr/local/bin:"
+find /usr/local/bin -maxdepth 1 -type f -name 'uhd_*' -print 2>/dev/null || true
+echo
+echo "Existing UHD libs in /usr/local/lib:"
+find /usr/local/lib -maxdepth 1 -type f \( -name 'libuhd.so*' -o -name 'libpyuhd.so*' \) -print 2>/dev/null || true
+echo
+echo "Existing UHD Python package dirs:"
+find /usr/local/lib -type d -path '*/dist-packages/uhd' -print 2>/dev/null || true
+find /usr/local/lib -type d -path '*/site-packages/uhd' -print 2>/dev/null || true
+log "Removing old UHD install from /usr/local..."
+rm -f /usr/local/bin/uhd_* || true
+rm -f /usr/local/lib/libuhd.so* || true
+rm -f /usr/local/lib/libpyuhd.so* || true
+rm -rf /usr/local/lib/python3/dist-packages/uhd || true
+rm -rf /usr/local/lib/python3/site-packages/uhd || true
+find /usr/local/lib -type d -path '*/dist-packages/uhd' -exec rm -rf {} + 2>/dev/null || true
+find /usr/local/lib -type d -path '*/site-packages/uhd' -exec rm -rf {} + 2>/dev/null || true
+log "Refreshing linker cache after cleanup..."
+ldconfig
+log "Removing old build directory..."
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+log "Configuring UHD..."
+cd "$BUILD_DIR"
+cmake .. \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DENABLE_PYTHON_API=ON
+log "Building UHD..."
+make -j"$(nproc)"
+log "Installing UHD..."
+make install
+log "Refreshing linker cache..."
+ldconfig
+log "Post-install verification..."
+echo
+echo "which uhd_usrp_probe:"
+which uhd_usrp_probe || true
+echo
+echo "which uhd_find_devices:"
+which uhd_find_devices || true
+echo
+echo "UHD version:"
+uhd_config_info --version || true
+echo
+echo "Linked libuhd for uhd_usrp_probe:"
+if command -v uhd_usrp_probe >/dev/null 2>&1; then
+  ldd "$(which uhd_usrp_probe)" | grep libuhd || true
+fi
+echo
+echo "Installed UHD Python package dirs:"
+find /usr/local/lib -type d -path '*/dist-packages/uhd' -print 2>/dev/null || true
+find /usr/local/lib -type d -path '*/site-packages/uhd' -print 2>/dev/null || true
+echo
+echo "Quick Python import test:"
+python3 - <<'PY'
+import sys
+print("Python:", sys.version)
+try:
+    import uhd
+    print("uhd import: OK")
+except Exception as e:
+    print("uhd import FAILED:", repr(e))
+PY
+log "Done."
+
+Then run:
+
+chmod +x rebuild_uhd_315.sh
+./rebuild_uhd_315.sh
+
+After it finishes, test the radio again:
+
+uhd_config_info --version
+uhd_find_devices --args "type=e3xx,addr=192.168.10.2"
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+
+And if the Python API imports cleanly:
+
+python3 - <<'PY'
+import uhd
+usrp = uhd.usrp.MultiUSRP("type=e3xx,addr=192.168.10.2")
+print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+PY
+
+If you want, ￼ I can also give you a version of the script that installs the build prerequisites first.
+
+
+
+
+
+---------------------
+
+Use this version inside the host container. It installs the common build prerequisites first, then does a clean UHD 3.15 rebuild/install from /workspace/uhd.
+
+Save as rebuild_uhd_315_full.sh:
+
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Clean UHD 3.15 rebuild/install script with prerequisite install
+# Assumes UHD source is at /workspace/uhd
+# Run as root inside your container.
+SRC_DIR="${SRC_DIR:-/workspace/uhd}"
+HOST_DIR="$SRC_DIR/host"
+BUILD_DIR="$HOST_DIR/build"
+log() {
+  printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+die() {
+  printf '\n[ERROR] %s\n' "$*" >&2
+  exit 1
+}
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+install_prereqs() {
+  log "Installing build prerequisites..."
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    pkg-config \
+    git \
+    ca-certificates \
+    libboost-all-dev \
+    libusb-1.0-0-dev \
+    python3 \
+    python3-dev \
+    python3-pip \
+    python3-setuptools \
+    python3-mako \
+    python3-requests \
+    python3-numpy \
+    python3-ruamel.yaml \
+    python3-click \
+    python3-docutils \
+    libncurses5-dev \
+    libncursesw5-dev \
+    libfftw3-dev \
+    libcppunit-dev \
+    libgmp-dev \
+    libmpfr-dev \
+    liborc-0.4-dev \
+    doxygen \
+    swig \
+    wget \
+    curl
+  log "Upgrading pip tooling..."
+  python3 -m pip install --upgrade pip setuptools wheel
+  log "Installing Python packages commonly needed by UHD/MPM tooling..."
+  python3 -m pip install mprpc || true
+}
+show_existing_state() {
+  log "Showing current UHD state before cleanup..."
+  if command -v uhd_config_info >/dev/null 2>&1; then
+    uhd_config_info --version || true
+  else
+    echo "uhd_config_info not currently installed"
+  fi
+  echo
+  echo "Existing UHD binaries in /usr/local/bin:"
+  find /usr/local/bin -maxdepth 1 -type f -name 'uhd_*' -print 2>/dev/null || true
+  echo
+  echo "Existing UHD libs in /usr/local/lib:"
+  find /usr/local/lib -maxdepth 1 -type f \( -name 'libuhd.so*' -o -name 'libpyuhd.so*' \) -print 2>/dev/null || true
+  echo
+  echo "Existing UHD Python package dirs:"
+  find /usr/local/lib -type d -path '*/dist-packages/uhd' -print 2>/dev/null || true
+  find /usr/local/lib -type d -path '*/site-packages/uhd' -print 2>/dev/null || true
+}
+clean_old_install() {
+  log "Removing old UHD install from /usr/local..."
+  rm -f /usr/local/bin/uhd_* || true
+  rm -f /usr/local/lib/libuhd.so* || true
+  rm -f /usr/local/lib/libpyuhd.so* || true
+  rm -rf /usr/local/lib/python3/dist-packages/uhd || true
+  rm -rf /usr/local/lib/python3/site-packages/uhd || true
+  find /usr/local/lib -type d -path '*/dist-packages/uhd' -exec rm -rf {} + 2>/dev/null || true
+  find /usr/local/lib -type d -path '*/site-packages/uhd' -exec rm -rf {} + 2>/dev/null || true
+  log "Refreshing linker cache after cleanup..."
+  ldconfig
+}
+build_uhd() {
+  log "Removing old build directory..."
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+  log "Configuring UHD..."
+  cd "$BUILD_DIR"
+  cmake .. \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DENABLE_PYTHON_API=ON
+  log "Building UHD..."
+  make -j"$(nproc)"
+  log "Installing UHD..."
+  make install
+  log "Refreshing linker cache..."
+  ldconfig
+}
+post_verify() {
+  log "Post-install verification..."
+  echo
+  echo "which uhd_usrp_probe:"
+  which uhd_usrp_probe || true
+  echo
+  echo "which uhd_find_devices:"
+  which uhd_find_devices || true
+  echo
+  echo "which uhd_config_info:"
+  which uhd_config_info || true
+  echo
+  echo "UHD version:"
+  uhd_config_info --version || true
+  echo
+  echo "Linked libuhd for uhd_usrp_probe:"
+  if command -v uhd_usrp_probe >/dev/null 2>&1; then
+    ldd "$(which uhd_usrp_probe)" | grep libuhd || true
+  fi
+  echo
+  echo "Installed UHD Python package dirs:"
+  find /usr/local/lib -type d -path '*/dist-packages/uhd' -print 2>/dev/null || true
+  find /usr/local/lib -type d -path '*/site-packages/uhd' -print 2>/dev/null || true
+  echo
+  echo "Quick Python import test:"
+  export PYTHONPATH=/usr/local/lib/python3/dist-packages:/usr/local/lib/python3/site-packages:${PYTHONPATH:-}
+  python3 - <<'PY'
+import sys
+print("Python:", sys.version)
+try:
+    import uhd
+    print("uhd import: OK")
+except Exception as e:
+    print("uhd import FAILED:", repr(e))
+PY
+}
+main() {
+  require_cmd apt-get
+  require_cmd find
+  require_cmd rm
+  [[ -d "$SRC_DIR" ]] || die "UHD source dir not found: $SRC_DIR"
+  [[ -d "$HOST_DIR" ]] || die "UHD host dir not found: $HOST_DIR"
+  log "Source tree: $SRC_DIR"
+  install_prereqs
+  show_existing_state
+  clean_old_install
+  build_uhd
+  post_verify
+  log "Done."
+  echo
+  echo "Next tests:"
+  echo '  export PYTHONPATH=/usr/local/lib/python3/dist-packages:/usr/local/lib/python3/site-packages:${PYTHONPATH:-}'
+  echo '  uhd_find_devices --args "type=e3xx,addr=192.168.10.2"'
+  echo '  uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"'
+  echo "  python3 - <<'PY'"
+  echo "import uhd"
+  echo "usrp = uhd.usrp.MultiUSRP('type=e3xx,addr=192.168.10.2')"
+  echo "print('OK:', usrp.get_mboard_name(), usrp.get_rx_num_channels())"
+  echo "PY"
+}
+main "$@"
+
+Then run:
+
+chmod +x rebuild_uhd_315_full.sh
+./rebuild_uhd_315_full.sh
+
+After it finishes, run:
+
+export PYTHONPATH=/usr/local/lib/python3/dist-packages:/usr/local/lib/python3/site-packages:${PYTHONPATH:-}
+uhd_config_info --version
+uhd_find_devices --args "type=e3xx,addr=192.168.10.2"
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+python3 - <<'PY'
+import uhd
+usrp = uhd.usrp.MultiUSRP("type=e3xx,addr=192.168.10.2")
+print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+PY
+
+
