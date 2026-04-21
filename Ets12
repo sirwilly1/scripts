@@ -1,0 +1,45 @@
+Good move. That is exactly the extra sanity check I would have done.
+
+You’ve now pinned the source to the exact release tag:
+
+v3.15.0.0
+
+instead of a 3.15.0.HEAD build. That removes one more variable.
+
+What to do after the rebuild finishes
+
+Run these in the container:
+
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages
+uhd_config_info --version
+uhd_find_devices --args "type=e3xx,addr=192.168.10.2"
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+
+Then run the Python test from /, not /workspace:
+
+cd /
+unset PYTHONPATH
+export PYTHONPATH=/usr/local/lib/python3.8/site-packages
+python3 - <<'PY'
+import uhd
+print("uhd file:", uhd.__file__)
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+How to interpret it
+
+If this exact-tag rebuild still gives the same LookupError: KeyError: No devices found, then I would call the host-side remote UHD path a dead end for now and switch fully to Option B.
+
+If it suddenly works, then the prior issue was likely tied to building from the HEAD commit instead of the clean release tag.
+
+When the rebuild finishes, send me just these outputs:
+
+* uhd_config_info --version
+* uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+* the Python MultiUSRP(...) result
