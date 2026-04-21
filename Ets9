@@ -1,0 +1,100 @@
+Your rebuild mostly worked, but the Python test in that screenshot is still misleading.
+
+What happened
+
+You were running Python from:
+
+/workspace
+
+and that directory contains a folder named:
+
+/workspace/uhd
+
+So when you do:
+
+import uhd
+
+Python is very likely importing the source tree directory /workspace/uhd, not the installed UHD Python bindings in /usr/local/lib/python3/site-packages/uhd.
+
+That explains this exact error:
+
+AttributeError: module 'uhd' has no attribute 'usrp'
+
+So that Python failure does not prove the UHD Python bindings are broken.
+
+Do this instead
+
+Run the Python test from outside /workspace:
+
+cd /
+export PYTHONPATH=/usr/local/lib/python3/site-packages:/usr/local/lib/python3/dist-packages:${PYTHONPATH:-}
+python3 - <<'PY'
+import uhd
+print("uhd module file:", getattr(uhd, "__file__", "no __file__"))
+print("dir(uhd):", [x for x in dir(uhd) if not x.startswith("_")][:50])
+PY
+
+If that prints something under /usr/local/lib/python3/site-packages/uhd, good.
+
+Then run:
+
+cd /
+export PYTHONPATH=/usr/local/lib/python3/site-packages:/usr/local/lib/python3/dist-packages:${PYTHONPATH:-}
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("uhd module file:", getattr(uhd, "__file__", "no __file__"))
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("OK:", usrp.get_mboard_name(), usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+Very important sanity check
+
+Also run this:
+
+cd /
+python3 - <<'PY'
+import uhd
+print(uhd.__file__)
+PY
+
+If it shows something like:
+
+/workspace/uhd/...
+
+then you are still importing the wrong thing.
+
+If it shows something like:
+
+/usr/local/lib/python3/site-packages/uhd/...
+
+then you are importing the installed bindings.
+
+What your screenshot does prove
+
+Even after the clean rebuild:
+
+* uhd_config_info --version works
+* uhd_find_devices --args "type=e3xx,addr=192.168.10.2" still says no devices
+* uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2" still fails
+
+So the host UHD CLI problem is still there.
+
+But the Python uhd.usrp error is probably just a module shadowing issue, not the root problem.
+
+Next best step after the corrected Python test
+
+Run this from /:
+
+UHD_LOG_LEVEL=trace uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2" > /tmp/e320_probe_trace.log 2>&1
+sed -n '1,200p' /tmp/e320_probe_trace.log
+
+Send me:
+
+* the output of print(uhd.__file__)
+* the corrected MultiUSRP(...) test result
+* the first ~200 lines of /tmp/e320_probe_trace.log
