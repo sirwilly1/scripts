@@ -1,0 +1,213 @@
+Perfect — you have both, and rx_samples_to_file is the better one to use here.
+
+Its CLI supports --file, --type {double,float,short}, --nsamps, --duration, --rate, --freq, --gain, --ant, and --otw. In the UHD example source, the defaults are --file usrp_samples.dat, --type short, --nsamps 0, and --duration 0, where 0 means continuous receive/write.  ￼
+
+Do this
+
+On the host, make a FIFO
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+On the host, start the SSH stream from the E320 into the FIFO
+
+Use the E320’s local UHD path and write to stdout:
+
+ssh root@192.168.10.2 '/usr/lib/uhd/examples/rx_samples_to_file \
+  --args "addr=127.0.0.1" \
+  --file /dev/stdout \
+  --type short \
+  --rate 250000 \
+  --freq 100000000 \
+  --gain 20 \
+  --nsamps 0' > /tmp/e320_iq.pipe
+
+That uses interleaved IQ as 16-bit integers (short), which is easy to ingest on the host. The example source documents short as interleaved IQ in sc16-style integer form.  ￼
+
+Host GNU Radio spectrograph layout
+
+Use this flowgraph on the host:
+
+File Source (short) -> Interleaved Short To Complex -> Multiply Const -> QT GUI Frequency Sink
+                                                                    \-> QT GUI Waterfall Sink
+
+Block settings
+
+File Source
+
+* File: /tmp/e320_iq.pipe
+* Output type: short
+* Repeat: No
+
+Interleaved Short To Complex
+
+* defaults are fine
+
+Multiply Const
+
+* Constant: 1.0 / 32768.0
+
+QT GUI Frequency Sink
+
+* Input: complex
+* Sample rate: 250e3
+* Center frequency: 100e6
+
+QT GUI Waterfall Sink
+
+* Input: complex
+* Sample rate: 250e3
+* Center frequency: 100e6
+
+Startup order
+
+Start the host GNU Radio flowgraph first, then run the SSH command.
+
+If the FIFO blocks, that is normal until both sides are open.
+
+If you want a stronger test signal
+
+For initial proof-of-life, change frequency to a strong local broadcast station, for example an FM station:
+
+ssh root@192.168.10.2 '/usr/lib/uhd/examples/rx_samples_to_file \
+  --args "addr=127.0.0.1" \
+  --file /dev/stdout \
+  --type short \
+  --rate 250000 \
+  --freq 98500000 \
+  --gain 30 \
+  --nsamps 0' > /tmp/e320_iq.pipe
+
+If you want to confirm the utility syntax on the E320 first
+
+/usr/lib/uhd/examples/rx_samples_to_file --help | head -50
+
+One useful variation
+
+If stdout streaming is too brittle, write to a named pipe on the E320 itself and SSH-cat it, but the direct /dev/stdout path above is the simplest first try.
+
+If you want, ￼ I’ll give you a host-side Python GNU Radio script version too, so you do not have to wire the blocks manually in GRC.
+
+
+------------—--—------------------
+
+Use this on the host.
+
+It reads interleaved int16 IQ from the FIFO /tmp/e320_iq.pipe and shows both a frequency display and a waterfall.
+
+Save as host_fifo_spectrogram.py:
+
+#!/usr/bin/env python3
+from gnuradio import gr, blocks, qtgui
+from PyQt5 import Qt
+import sip
+import sys
+class HostFIFOSpectrogram(gr.top_block, Qt.QWidget):
+    def __init__(self, fifo_path="/tmp/e320_iq.pipe", samp_rate=250e3, center_freq=100e6):
+        gr.top_block.__init__(self, "E320 FIFO Spectrogram")
+        Qt.QWidget.__init__(self)
+        self.setWindowTitle("E320 Live Spectrogram (FIFO)")
+        self.fifo_path = fifo_path
+        self.samp_rate = samp_rate
+        self.center_freq = center_freq
+        self.top_layout = Qt.QVBoxLayout(self)
+        # Reads int16 stream from FIFO
+        self.src = blocks.file_source(
+            itemsize=gr.sizeof_short,
+            filename=self.fifo_path,
+            repeat=False,
+        )
+        # Convert interleaved int16 IQ -> complex
+        self.iq = blocks.interleaved_short_to_complex(False, False)
+        # Scale to about [-1, 1]
+        self.scale = blocks.multiply_const_cc(1.0 / 32768.0)
+        self.freq_sink = qtgui.freq_sink_c(
+            1024,                  # FFT size
+            0,                     # Window type (default)
+            self.center_freq,      # Center freq
+            self.samp_rate,        # Sample rate
+            "Frequency",
+            1,
+            None,
+        )
+        self.freq_sink.set_update_time(0.10)
+        self.freq_sink.enable_grid(True)
+        self.freq_sink.enable_autoscale(False)
+        self.freq_sink.set_y_axis(-140, 10)
+        self.waterfall_sink = qtgui.waterfall_sink_c(
+            1024,
+            0,
+            self.center_freq,
+            self.samp_rate,
+            "Waterfall",
+            1,
+            None,
+        )
+        self.waterfall_sink.set_update_time(0.10)
+        self.waterfall_sink.enable_grid(False)
+        self.connect((self.src, 0), (self.iq, 0))
+        self.connect((self.iq, 0), (self.scale, 0))
+        self.connect((self.scale, 0), (self.freq_sink, 0))
+        self.connect((self.scale, 0), (self.waterfall_sink, 0))
+        self.top_layout.addWidget(sip.wrapinstance(self.freq_sink.qwidget(), Qt.QWidget))
+        self.top_layout.addWidget(sip.wrapinstance(self.waterfall_sink.qwidget(), Qt.QWidget))
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Live spectrogram from E320 FIFO IQ stream")
+    parser.add_argument("--fifo", default="/tmp/e320_iq.pipe", help="FIFO path")
+    parser.add_argument("--samp-rate", type=float, default=250e3, help="Sample rate")
+    parser.add_argument("--center-freq", type=float, default=100e6, help="Center frequency")
+    args = parser.parse_args()
+    qapp = Qt.QApplication(sys.argv)
+    tb = HostFIFOSpectrogram(
+        fifo_path=args.fifo,
+        samp_rate=args.samp_rate,
+        center_freq=args.center_freq,
+    )
+    tb.start()
+    tb.show()
+    def quitting():
+        tb.stop()
+        tb.wait()
+    qapp.aboutToQuit.connect(quitting)
+    qapp.exec_()
+if __name__ == "__main__":
+    main()
+
+Make it executable:
+
+chmod +x host_fifo_spectrogram.py
+
+Run order
+
+1) On the host, create the FIFO
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+2) On the host, start the spectrogram script
+
+python3 host_fifo_spectrogram.py --fifo /tmp/e320_iq.pipe --samp-rate 250e3 --center-freq 100e6
+
+3) In another host terminal, start the SSH stream
+
+ssh root@192.168.10.2 '/usr/lib/uhd/examples/rx_samples_to_file \
+  --args "addr=127.0.0.1" \
+  --file /dev/stdout \
+  --type short \
+  --rate 250000 \
+  --freq 100000000 \
+  --gain 20 \
+  --nsamps 0' > /tmp/e320_iq.pipe
+
+Notes
+
+* If you want a different frequency, change both:
+    * --freq in the SSH command
+    * --center-freq in the host script
+* If the waterfall is blank, increase gain to 30 or 40
+* If you want a stronger test source, tune to a strong local FM station
+
+If the script errors on a Qt or GNU Radio import
+
+Paste the exact error and I’ll adjust it for your host install.
