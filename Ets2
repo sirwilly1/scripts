@@ -1,0 +1,44 @@
+Yes — we should look into RPC, but to debug it, not to change its bind address first.
+
+Based on your own busybox netstat screenshot, the E320 is already listening on 0.0.0.0:49601 for MPM RPC and 0.0.0.0:49600 for discovery. That lines up with the UHD 3.15 source and MPM docs: MPM uses a network-RPC control path, usrp_hwd.py spawns a separate RPC process plus a discovery process, and the only exposed bind-address knob in usrp_hwd.py is --discovery-addr, not an RPC bind-address flag.  ￼
+
+So the answer is:
+
+Yes, inspect RPC.
+No, changing the RPC bind is probably not the first lever, because the evidence says it is already listening on all IPv4 interfaces. Your earlier mgmt_addr=127.0.0.1 on the E320 is consistent with embedded-mode behavior and does not by itself prove loopback-only RPC. The MPM docs explicitly say both embedded mode and network mode connect to MPM over a network socket.  ￼
+
+The most useful next step is to see whether the host is actually reaching the RPC server and whether claim/init fails after connection. MPM uses RPC only for command and control; streaming is separate, so a failure here can break uhd_usrp_probe even when basic network tests still look fine.  ￼
+
+Run this from the host:
+
+python3 - <<'PY'
+import socket
+s = socket.socket()
+s.settimeout(3)
+try:
+    s.connect(("192.168.10.2", 49601))
+    print("TCP 49601 reachable")
+except Exception as e:
+    print("TCP 49601 failed:", e)
+finally:
+    s.close()
+PY
+uhd_find_devices --args "type=e3xx,addr=192.168.10.2"
+uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2"
+
+At the same time, on the E320:
+
+tcpdump -ni sfp0 'port 49600 or port 49601'
+journalctl -u usrp-hwd.service -f
+
+If the host opens 49601 and you see traffic on sfp0, then RPC reachability is fine and the problem is likely in MPM claim/init or host/device compatibility. If you never see a TCP connect to 49601, then the failure is still before RPC actually starts doing useful work.
+
+There is also an official low-level tool for talking directly to MPM: mpm_shell.py. Ettus documents it as a command-line tool that connects to a device by network address and can claim the device with -c. That is a very good way to separate “can I talk to MPM at all?” from “can UHD fully initialize the radio?”  ￼
+
+If you have the UHD source tree on the host, try:
+
+python3 tools/mpm_shell.py -c 192.168.10.2
+
+If that connects, RPC is fundamentally working and UHD’s failure is further up the stack.
+
+So: yes, we should investigate RPC, but the right question is now “is the host reaching RPC and successfully claiming the device?”, not “can we rebind RPC away from localhost?”.
