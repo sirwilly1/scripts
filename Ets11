@@ -1,0 +1,42 @@
+Yes — before going deeper into Option B, it is worth sanity-checking two things:
+
+1. that your source tree is the official UHD repo
+2. that your build prerequisites line up with Ettus’ build guide
+
+The official UHD source repo is EttusResearch/uhd, and its top-level layout includes host/, mpm/, firmware/, fpga/, images/, and tools/. That matches the tree you’ve been building from. Ettus’ build guide also says UHD is built from the host/ directory with CMake, and calls out core requirements like CMake >= 3.12, Boost >= 1.66, and Python >= 3.7.  ￼
+
+Run these inside the host container:
+
+cd /workspace/uhd
+git remote -v
+git rev-parse --short HEAD
+git status --short
+git branch --show-current
+git tag --points-at HEAD
+
+What I want to see:
+
+* the remote should point at the official Ettus repo
+* the commit should match or be very close to the version string you already saw in UHD, gaea0e2de
+* the tree should ideally be clean, or at least not have local edits in host/ or mpm/
+
+Also check the build toolchain against Ettus’ documented minimums:
+
+cmake --version
+python3 --version
+dpkg -l | grep -E 'libboost|python3-(mako|requests|numpy|ruamel|setuptools|docutils)|libusb|cmake'
+
+From the official build docs, the big items are CMake, Boost, Python, and the common Python packages used by UHD utilities and the Python API. Ettus also documents the standard Unix build flow as cd <uhd-repo>/host && mkdir build && cd build && cmake ../ && make && sudo make install, with ldconfig afterward on Linux.  ￼
+
+One more useful cross-check: your current GitHub repo should be the official one, but the current default branch and latest releases on GitHub are much newer than UHD 3.15. The repo’s latest release is 4.9.0.1, so for your E320 investigation you should not blindly rebuild from current master unless you intend to move off 3.15; for a 3.15 repro/debug, you want the 3.15-era source/commit, not current head.  ￼
+
+So yes, checking the repo and packages is worth doing. Send me the output of:
+
+git remote -v
+git rev-parse --short HEAD
+git status --short
+cmake --version
+python3 --version
+dpkg -l | grep -E 'libboost|python3-(mako|requests|numpy|ruamel|setuptools|docutils)|libusb|cmake'
+
+and I’ll tell you whether your source tree and dependency set look right before we pivot fully to Option B.
