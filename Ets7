@@ -1,0 +1,41 @@
+This is enough to call it: the radio and MPM are fine.
+
+You’ve now shown all of these work from the host:
+
+* direct TCP reachability to 192.168.10.2:49601
+* MPM RPC connection
+* device claim
+* get_device_info
+* get_last_error returning nothing
+* overlay present (e320.dbo)
+* EEPROM reads
+* Python UHD package present under /usr/local/lib/python3/dist-packages/uhd on the host/container
+
+So the failure is no longer networking or MPM. It is in the host UHD tool path, specifically how uhd_find_devices / uhd_usrp_probe are constructing the E3xx device after MPM is already reachable. The E3xx/MPM model is that UHD talks to MPM over RPC for control, which you have now proven independently.
+
+The most useful next move is to bypass the CLI tools and test the host UHD Python bindings directly, but with the correct Python path loaded. Since you found the package under /usr/local/lib/python3/dist-packages/uhd, run this in the host container:
+
+export PYTHONPATH=/usr/local/lib/python3/dist-packages:$PYTHONPATH
+python3 - <<'PY'
+import uhd
+args = "type=e3xx,addr=192.168.10.2"
+print("Creating MultiUSRP with:", args)
+try:
+    usrp = uhd.usrp.MultiUSRP(args)
+    print("MultiUSRP created OK")
+    print("Mboard name:", usrp.get_mboard_name())
+    print("Num RX chans:", usrp.get_rx_num_channels())
+except Exception as e:
+    print("FAILED:", repr(e))
+PY
+
+If that works, then the C++ probe utilities are the broken layer. If it fails the same way, then the host UHD runtime itself is failing above MPM.
+
+Also run one fully verbose probe from the same shell:
+
+UHD_LOG_LEVEL=trace uhd_usrp_probe --args "type=e3xx,addr=192.168.10.2" 2>&1 | tee /tmp/e320_probe_trace.log
+
+What I want from you next is just two things:
+
+1. the result of the Python MultiUSRP(...) test
+2. the first part of /tmp/e320_probe_trace.log around where it starts failing
