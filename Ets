@@ -1,0 +1,37 @@
+No problem. ss is just a socket-inspection tool; netstat shows similar socket information and supports the flags you need here: -t for TCP, -u for UDP, -l for listening sockets, -n for numeric addresses/ports, and -p for the owning program/PID. The Linux man page also notes that ss is the newer replacement for netstat, but netstat is still fine for this check.  ￼
+
+Run these on the E320 instead:
+
+which netstat
+netstat -ltnp | grep 49601
+netstat -lunp | grep 49600
+netstat -anp  | grep -E '49600|49601'
+
+How to read that:
+
+* if you see 127.0.0.1:49601, the RPC side is loopback-only
+* if you see 0.0.0.0:49601, it is listening on all IPv4 interfaces
+* if you see 192.168.10.2:49601, it is explicitly bound to sfp0
+* same idea for UDP discovery on 49600  ￼
+
+If netstat is missing too, use these fallbacks:
+
+busybox netstat -an | grep -E '49600|49601'
+cat /proc/net/tcp /proc/net/tcp6 /proc/net/udp /proc/net/udp6 | grep -iE 'C1C0|C1C1'
+ps aux | grep -E 'usrp_hwd|mpm|python'
+
+49600 in hex is C1C0, and 49601 is C1C1, so those /proc/net/* greps are checking the same two ports.
+
+Send me the output of:
+
+netstat -ltnp | grep 49601
+netstat -lunp | grep 49600
+
+and I’ll interpret it.
+
+I’m trying to connect an Ettus E320 software-defined radio to my host computer over Ethernet so I can use UHD and GNU Radio remotely. The basic network path appears healthy: the host can ping the device, communicate with its expected ports, and route traffic correctly over the dedicated 192.168.10.x subnet. I also rebuilt the host-side UHD software to closely match the E320’s installed UHD/MPM version, so this is no longer just a simple version mismatch or cable/network issue.
+
+The remaining problem is that UHD discovery from the host still cannot detect or initialize the radio remotely, even though the E320 works when UHD commands are run locally on the device itself. Current evidence suggests the E320’s internal management/discovery service is advertising an incorrect localhost management address (127.0.0.1) instead of its Ethernet address (192.168.10.2). As a result, the host can reach the hardware at the network layer, but UHD cannot complete remote discovery/control because the device is presenting unusable connection information.
+
+These images are of my network setup 
+
