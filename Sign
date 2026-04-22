@@ -1,0 +1,90 @@
+Yes — the error is specific and fixable.
+
+What the error means
+
+You ran:
+
+from sigmf import SigMFFile
+
+and got:
+
+ImportError: cannot import name 'SigMFFile' from 'sigmf' (unknown location)
+
+That usually means one of these:
+
+1. you do not have the correct sigmf package installed
+2. Python is importing the wrong module named sigmf
+    * for example a local file like sigmf.py
+    * or a folder named sigmf in your current directory
+
+The phrase:
+
+from 'sigmf' (unknown location)
+
+strongly suggests Python is picking up the wrong thing.
+
+⸻
+
+First, check what Python is importing
+
+Run this on the host:
+
+python3 - <<'PY'
+import sigmf
+print("sigmf module:", sigmf)
+print("sigmf file:", getattr(sigmf, "__file__", "no __file__"))
+print("dir:", [x for x in dir(sigmf) if not x.startswith("_")][:50])
+PY
+
+If that points to a local file in your home directory or current folder, that is the problem.
+
+Also check:
+
+ls -l
+find . -maxdepth 2 \( -name 'sigmf.py' -o -name 'sigmf' \)
+
+If you see a local sigmf.py or sigmf/, rename it.
+
+⸻
+
+Correct install command
+
+Install the official package:
+
+python3 -m pip install sigmf
+
+Then test:
+
+python3 - <<'PY'
+from sigmf import SigMFFile
+print("SigMF import OK")
+PY
+
+⸻
+
+If you already installed it
+
+Then it is probably a name collision. A very common fix is:
+
+cd /
+python3 - <<'PY'
+from sigmf import SigMFFile
+print("SigMF import OK")
+PY
+
+If that works from / but not from your script directory, your script directory contains something shadowing sigmf.
+
+⸻
+
+Temporary workaround
+
+If you want to keep moving right now, I can give you a version of the script that disables SigMF writing and only does the styled spectrogram UI first. Then once sigmf is cleanly installed, you can re-enable the chunk writer.
+
+Run these and send me the output:
+
+python3 - <<'PY'
+import sigmf
+print("sigmf file:", getattr(sigmf, "__file__", "no __file__"))
+print("dir:", [x for x in dir(sigmf) if not x.startswith("_")][:50])
+PY
+find . -maxdepth 2 \( -name 'sigmf.py' -o -name 'sigmf' \)
