@@ -1,0 +1,175 @@
+Use this polished launcher script. It takes real command-line flags like --freq, --rate, and --gain, while still keeping sane defaults.
+
+Save as launch_e320_spectrogram.sh:
+
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# -------------------------
+# Defaults
+# -------------------------
+E320_IP="192.168.10.2"
+FIFO_PATH="/tmp/e320_iq.pipe"
+FREQ="102700000"
+RATE="1000000"
+GAIN="40"
+ANT="RX2"
+OUTPUT_PATH="$HOME/sigmf_files"
+CHUNK_SECONDS="5"
+GUI_SCRIPT="$HOME/waterfall_sigmf.py"
+PYTHON_BIN="python3"
+# -------------------------
+# Helpers
+# -------------------------
+log() {
+  printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+usage() {
+  cat <<'EOF'
+Usage:
+  ./launch_e320_spectrogram.sh [options]
+Options:
+  --freq HZ            Center frequency in Hz (default: 102700000)
+  --rate SPS           Sample rate in samples/sec (default: 1000000)
+  --gain DB            RX gain in dB (default: 40)
+  --ant NAME           RX antenna name (default: RX2)
+  --ip ADDR            E320 IP address (default: 192.168.10.2)
+  --fifo PATH          FIFO path on host (default: /tmp/e320_iq.pipe)
+  --output-path PATH   SigMF output directory (default: ~/sigmf_files)
+  --chunk-seconds N    SigMF chunk duration in seconds (default: 5)
+  --gui-script PATH    Host GUI Python script (default: ~/waterfall_sigmf.py)
+  --python BIN         Python interpreter for GUI script (default: python3)
+  -h, --help           Show this help
+Examples:
+  ./launch_e320_spectrogram.sh
+  ./launch_e320_spectrogram.sh --freq 98100000 --rate 250000 --gain 40
+  ./launch_e320_spectrogram.sh --freq 102700000 --rate 1000000 --gain 35 --ant RX2
+  ./launch_e320_spectrogram.sh --python "$HOME/sigmf-venv/bin/python"
+EOF
+}
+cleanup() {
+  set +e
+  log "Cleaning up..."
+  if [[ -n "${SSH_PID:-}" ]] && kill -0 "$SSH_PID" 2>/dev/null; then
+    log "Stopping SSH IQ stream (PID $SSH_PID)"
+    kill "$SSH_PID" 2>/dev/null || true
+    wait "$SSH_PID" 2>/dev/null || true
+  fi
+  [[ -p "$FIFO_PATH" ]] && rm -f "$FIFO_PATH"
+}
+trap cleanup EXIT INT TERM
+# -------------------------
+# Parse args
+# -------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --freq)
+      FREQ="$2"; shift 2 ;;
+    --rate)
+      RATE="$2"; shift 2 ;;
+    --gain)
+      GAIN="$2"; shift 2 ;;
+    --ant)
+      ANT="$2"; shift 2 ;;
+    --ip)
+      E320_IP="$2"; shift 2 ;;
+    --fifo)
+      FIFO_PATH="$2"; shift 2 ;;
+    --output-path)
+      OUTPUT_PATH="$2"; shift 2 ;;
+    --chunk-seconds)
+      CHUNK_SECONDS="$2"; shift 2 ;;
+    --gui-script)
+      GUI_SCRIPT="$2"; shift 2 ;;
+    --python)
+      PYTHON_BIN="$2"; shift 2 ;;
+    -h|--help)
+      usage; exit 0 ;;
+    *)
+      echo "Unknown option: $1"
+      echo
+      usage
+      exit 1 ;;
+  esac
+done
+# Expand ~ if present
+OUTPUT_PATH="${OUTPUT_PATH/#\~/$HOME}"
+GUI_SCRIPT="${GUI_SCRIPT/#\~/$HOME}"
+FIFO_PATH="${FIFO_PATH/#\~/$HOME}"
+# -------------------------
+# Sanity checks
+# -------------------------
+command -v ssh >/dev/null 2>&1 || { echo "ssh not found"; exit 1; }
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || { echo "python not found: $PYTHON_BIN"; exit 1; }
+[[ -f "$GUI_SCRIPT" ]] || {
+  echo "GUI script not found: $GUI_SCRIPT"
+  exit 1
+}
+mkdir -p "$OUTPUT_PATH"
+# Basic numeric checks
+[[ "$FREQ" =~ ^[0-9]+$ ]] || { echo "--freq must be an integer Hz value"; exit 1; }
+[[ "$RATE" =~ ^[0-9]+$ ]] || { echo "--rate must be an integer samples/sec value"; exit 1; }
+[[ "$GAIN" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--gain must be numeric"; exit 1; }
+[[ "$CHUNK_SECONDS" =~ ^[0-9]+$ ]] || { echo "--chunk-seconds must be an integer"; exit 1; }
+# -------------------------
+# Setup FIFO
+# -------------------------
+log "Preparing FIFO: $FIFO_PATH"
+rm -f "$FIFO_PATH"
+mkfifo "$FIFO_PATH"
+# -------------------------
+# Start SSH stream
+# -------------------------
+log "Starting SSH IQ stream from E320"
+log "IP=$E320_IP FREQ=$FREQ RATE=$RATE GAIN=$GAIN ANT=$ANT"
+ssh root@"$E320_IP" "/usr/lib/uhd/examples/rx_samples_to_file \
+  --args \"addr=127.0.0.1\" \
+  --ant $ANT \
+  --file /dev/stdout \
+  --type short \
+  --rate $RATE \
+  --freq $FREQ \
+  --gain $GAIN \
+  --nsamps 0" > "$FIFO_PATH" &
+SSH_PID=$!
+sleep 1
+if ! kill -0 "$SSH_PID" 2>/dev/null; then
+  echo "SSH stream failed to start"
+  exit 1
+fi
+# -------------------------
+# Launch GUI
+# -------------------------
+log "Launching host GUI"
+"$PYTHON_BIN" "$GUI_SCRIPT" \
+  --fifo "$FIFO_PATH" \
+  --samp-rate "$RATE" \
+  --center-freq "$FREQ" \
+  --output-path "$OUTPUT_PATH" \
+  --chunk-seconds "$CHUNK_SECONDS" \
+  --gain-label "${GAIN} dB" \
+  --source-label "E320 / ${ANT} / SSH FIFO"
+log "GUI exited"
+
+Make it executable:
+
+chmod +x launch_e320_spectrogram.sh
+
+Examples:
+
+Default:
+
+./launch_e320_spectrogram.sh
+
+Tune to 98.1 MHz:
+
+./launch_e320_spectrogram.sh --freq 98100000 --rate 250000 --gain 40
+
+Use your SigMF venv Python:
+
+./launch_e320_spectrogram.sh --python "$HOME/sigmf-venv/bin/python"
+
+Custom output path:
+
+./launch_e320_spectrogram.sh --output-path "$HOME/captures/e320"
+
+If you want, I can also add --status-only and --no-sigmf style flags.
