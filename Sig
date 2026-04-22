@@ -1,0 +1,57 @@
+Yes — your screenshot shows the root cause.
+
+Python is importing sigmf as a namespace package:
+
+sigmf module: <module 'sigmf' (namespace) from ['/usr/local/lib/python3.12/dist-packages/sigmf']>
+sigmf file: None
+dir: []
+
+That is why this fails:
+
+from sigmf import SigMFFile
+
+In the normal SigMF Python package, from sigmf import SigMFFile is supposed to work. The official docs show exactly that import pattern.  ￼
+
+So your installed sigmf on that machine is not a healthy normal install of the expected package. It looks like a broken or conflicting install, and it is also landing under a Python 3.12 path, while your earlier UHD/GNU Radio work was using Python 3.8. That mismatch is another red flag. Your screenshot shows sigmf resolving from /usr/local/lib/python3.12/dist-packages/sigmf, while the host/container Python you were using earlier reported 3.8.x. A package installed for one interpreter is not reliably usable from another.  ￼
+
+Best fix
+
+On the machine where you are running waterfall_sigmf.py, clean out the broken sigmf install and reinstall it for the exact Python you are using to run the script.
+
+Run these:
+
+python3 -c "import sys; print(sys.executable); print(sys.version)"
+python3 -m pip uninstall -y sigmf
+python3 -m pip install --upgrade --no-cache-dir sigmf
+python3 - <<'PY'
+import sigmf
+print("sigmf module:", sigmf)
+print("sigmf file:", getattr(sigmf, "__file__", "no __file__"))
+from sigmf import SigMFFile
+print("SigMFFile import OK:", SigMFFile)
+PY
+
+If that still shows a namespace package or SigMFFile import fails, also check for conflicting installs:
+
+python3 -m pip show sigmf
+python3 - <<'PY'
+import sys
+print("\n".join(sys.path))
+PY
+find /usr/local/lib -path '*sigmf*' 2>/dev/null
+find /usr/lib -path '*sigmf*' 2>/dev/null
+
+Fast workaround
+
+If you want to keep moving immediately, I would temporarily remove the SigMF dependency from the GUI script and just get the styled spectrogram stable first. Then add SigMF back after the Python package is clean.
+
+One more likely cause
+
+If you previously installed something into a different Python, it can help to be explicit:
+
+python3.8 -m pip install --upgrade --no-cache-dir sigmf
+python3.8 waterfall_sigmf.py ...
+
+or whatever exact interpreter you are using on that box.
+
+The key point is: the current sigmf import on that machine is wrong, and your screenshot proves it.
