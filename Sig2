@@ -1,0 +1,110 @@
+Good news: you got past the Qt sink crashes.
+
+The new failure is now in the SigMF writer, and the key line is:
+
+FileNotFoundError: [Errno 2] No such file or directory: 'sigmf_20260422T190803Z_0000.sigmf-data'
+
+That means the script is trying to write the SigMF chunk file into the current working directory instead of your output directory.
+
+What’s wrong
+
+Inside your _write_chunk() logic, the SigMF metadata object is likely being created with just:
+
+data_file=os.path.basename(data_path)
+
+and the library is trying to stat that filename relative to the current directory.
+
+So even though you passed:
+
+--output-path ./sigmf_files
+
+the data file handling is still not fully aligned with that path.
+
+Fix
+
+In your SigMFChunkWriter._write_chunk() function, change this part:
+
+data_path = os.path.join(self.output_path, basename + ".sigmf-data")
+meta_path = os.path.join(self.output_path, basename + ".sigmf-meta")
+data.astype(np.complex64).tofile(data_path)
+meta = SigMFFile(
+    data_file=os.path.basename(data_path),
+    global_info={
+        SigMFFile.DATATYPE_KEY: "cf32_le",
+        SigMFFile.SAMPLE_RATE_KEY: self.sample_rate,
+        SigMFFile.VERSION_KEY: "0.0.1",
+    },
+)
+
+to this:
+
+data_path = os.path.join(self.output_path, basename + ".sigmf-data")
+meta_path = os.path.join(self.output_path, basename + ".sigmf-meta")
+os.makedirs(self.output_path, exist_ok=True)
+data.astype(np.complex64).tofile(data_path)
+meta = SigMFFile(
+    data_file=data_path,
+    global_info={
+        SigMFFile.DATATYPE_KEY: "cf32_le",
+        SigMFFile.SAMPLE_RATE_KEY: self.sample_rate,
+        SigMFFile.VERSION_KEY: "0.0.1",
+    },
+)
+
+Then save the meta like this
+
+Replace:
+
+with open(meta_path, "w") as f:
+    f.write(meta.dumps())
+
+with:
+
+with open(meta_path, "w") as f:
+    f.write(meta.dumps())
+
+That part is fine already.
+
+Even safer version
+
+If the library still complains, use this pattern instead:
+
+data_path = os.path.abspath(os.path.join(self.output_path, basename + ".sigmf-data"))
+meta_path = os.path.abspath(os.path.join(self.output_path, basename + ".sigmf-meta"))
+os.makedirs(self.output_path, exist_ok=True)
+data.astype(np.complex64).tofile(data_path)
+meta = SigMFFile(
+    data_file=data_path,
+    global_info={
+        SigMFFile.DATATYPE_KEY: "cf32_le",
+        SigMFFile.SAMPLE_RATE_KEY: self.sample_rate,
+        SigMFFile.VERSION_KEY: "0.0.1",
+    },
+)
+
+Quick workaround if you want the UI running right now
+
+Temporarily disable the SigMF block and just get the spectrogram stable.
+
+Or run with an absolute output path:
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000 \
+  --output-path /home/4n46924/sigmf_files \
+  --chunk-seconds 5 \
+  --gain-label "40 dB" \
+  --source-label "E320 / RX2 / SSH FIFO"
+
+But the real fix is the data_file=data_path change above.
+
+One more note
+
+This warning is not the main blocker right now:
+
+QSocketNotifier: Can only be used with threads started with QThread
+
+The actual crash is the SigMF file path issue.
+
+If you paste your current _write_chunk() function, I’ll rewrite it exactly.
