@@ -1,0 +1,620 @@
+#!/usr/bin/env python3
+import sys
+import os
+import datetime
+import argparse
+import numpy as np
+
+from gnuradio import gr, blocks, qtgui
+from PyQt5 import Qt, QtGui
+import sip
+from sigmf import SigMFFile
+
+
+class SigMFChunkWriter(gr.sync_block):
+    """
+    Saves incoming complex64 samples into SigMF chunks.
+    Pass-through block: input complex64 -> output complex64
+    """
+
+    def __init__(self, sample_rate=250000, center_freq=102700000, output_path="./sigmf_files", duration_sec=5):
+        gr.sync_block.__init__(
+            self,
+            name="SigMF Chunk Writer",
+            in_sig=[np.complex64],
+            out_sig=[np.complex64],
+        )
+
+        self.sample_rate = float(sample_rate)
+        self.center_freq = float(center_freq)
+        self.duration_sec = int(duration_sec)
+        self.samples_per_chunk = int(self.sample_rate * self.duration_sec)
+
+        self.buffer = np.array([], dtype=np.complex64)
+        self.file_index = 0
+
+        self.output_path = output_path
+        os.makedirs(self.output_path, exist_ok=True)
+
+    def work(self, input_items, output_items):
+        in0 = input_items[0]
+        output_items[0][:] = in0
+
+        if len(in0) == 0:
+            return 0
+
+        self.buffer = np.concatenate((self.buffer, in0))
+
+        while len(self.buffer) >= self.samples_per_chunk:
+            chunk = self.buffer[:self.samples_per_chunk]
+            self._write_chunk(chunk)
+            self.buffer = self.buffer[self.samples_per_chunk:]
+            self.file_index += 1
+
+        return len(in0)
+
+    def _write_chunk(self, data):
+        timestamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        basename = f"sigmf_{timestamp}_{self.file_index:04d}"
+
+        data_path = os.path.join(self.output_path, basename + ".sigmf-data")
+        meta_path = os.path.join(self.output_path, basename + ".sigmf-meta")
+
+        data.astype(np.complex64).tofile(data_path)
+
+        meta = SigMFFile(
+            data_file=os.path.basename(data_path),
+            global_info={
+                SigMFFile.DATATYPE_KEY: "cf32_le",
+                SigMFFile.SAMPLE_RATE_KEY: self.sample_rate,
+                SigMFFile.VERSION_KEY: "0.0.1",
+            },
+        )
+
+        meta.add_capture(
+            0,
+            metadata={
+                SigMFFile.FREQUENCY_KEY: self.center_freq,
+                SigMFFile.DATETIME_KEY: timestamp,
+            },
+        )
+
+        with open(meta_path, "w") as f:
+            f.write(meta.dumps())
+
+
+class MetadataBadge(Qt.QFrame):
+    def __init__(self, label: str, value: str, accent: bool = False):
+        super().__init__()
+        self.setObjectName("metaBadgeAccent" if accent else "metaBadge")
+
+        layout = Qt.QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(1)
+
+        lbl = Qt.QLabel(label)
+        lbl.setObjectName("badgeLabel")
+
+        val = Qt.QLabel(value)
+        val.setObjectName("badgeValue")
+
+        layout.addWidget(lbl)
+        layout.addWidget(val)
+
+
+class PanelFrame(Qt.QFrame):
+    def __init__(self, title: str, subtitle: str | None = None):
+        super().__init__()
+        self.setObjectName("panelFrame")
+
+        outer = Qt.QVBoxLayout(self)
+        outer.setContentsMargins(10, 8, 10, 10)
+        outer.setSpacing(8)
+
+        header = Qt.QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+
+        title_lbl = Qt.QLabel(title)
+        title_lbl.setObjectName("panelTitle")
+        header.addWidget(title_lbl)
+
+        header.addStretch(1)
+
+        if subtitle:
+            sub_lbl = Qt.QLabel(subtitle)
+            sub_lbl.setObjectName("panelSubtitle")
+            header.addWidget(sub_lbl)
+
+        outer.addLayout(header)
+        self.body_layout = Qt.QVBoxLayout()
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        self.body_layout.setSpacing(0)
+        outer.addLayout(self.body_layout)
+
+    def addWidget(self, widget):
+        self.body_layout.addWidget(widget)
+
+
+class HostFIFOSpectrogramSigMF(gr.top_block, Qt.QWidget):
+    def __init__(
+        self,
+        fifo_path="/tmp/e320_iq.pipe",
+        samp_rate=250e3,
+        center_freq=102.7e6,
+        output_path="./sigmf_files",
+        chunk_seconds=5,
+        gain_label="N/A",
+        source_label="FIFO / SSH / E320",
+        record_sigmf=True,
+    ):
+        gr.top_block.__init__(self, "E320 FIFO Spectrogram + SigMF")
+        Qt.QWidget.__init__(self)
+        self.setWindowTitle("E320 Signal Analysis Console")
+        self.resize(1380, 920)
+
+        self.fifo_path = fifo_path
+        self.samp_rate = float(samp_rate)
+        self.center_freq = float(center_freq)
+        self.output_path = output_path
+        self.chunk_seconds = int(chunk_seconds)
+        self.gain_label = str(gain_label)
+        self.source_label = source_label
+        self.record_sigmf = bool(record_sigmf)
+
+        self._apply_theme()
+
+        root = Qt.QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(10)
+
+        header = Qt.QFrame()
+        header.setObjectName("headerBar")
+        header_layout = Qt.QHBoxLayout(header)
+        header_layout.setContentsMargins(14, 10, 14, 10)
+        header_layout.setSpacing(10)
+
+        title_col = Qt.QVBoxLayout()
+        title_col.setSpacing(1)
+
+        app_title = Qt.QLabel("E320 SIGNAL ANALYSIS CONSOLE")
+        app_title.setObjectName("appTitle")
+
+        subtitle_text = "Live spectrum and waterfall"
+        if self.record_sigmf:
+            subtitle_text += ", with rolling SigMF capture"
+        else:
+            subtitle_text += " — SigMF recording disabled"
+
+        app_subtitle = Qt.QLabel(subtitle_text)
+        app_subtitle.setObjectName("appSubtitle")
+
+        title_col.addWidget(app_title)
+        title_col.addWidget(app_subtitle)
+
+        header_layout.addLayout(title_col, 1)
+
+        header_layout.addWidget(MetadataBadge("Center Freq", self._fmt_freq(self.center_freq), accent=True))
+        header_layout.addWidget(MetadataBadge("Sample Rate", self._fmt_rate(self.samp_rate)))
+        header_layout.addWidget(MetadataBadge("Source", self.source_label))
+        header_layout.addWidget(MetadataBadge("Gain", self.gain_label))
+        header_layout.addWidget(MetadataBadge("SigMF", "ON" if self.record_sigmf else "OFF"))
+        header_layout.addWidget(MetadataBadge("Status", "LIVE", accent=True))
+
+        root.addWidget(header)
+
+        self.src = blocks.file_source(
+            itemsize=gr.sizeof_short,
+            filename=self.fifo_path,
+            repeat=False,
+        )
+
+        self.iq = blocks.interleaved_short_to_complex(False, False)
+        self.scale = blocks.multiply_const_cc(1.0 / 32768.0)
+
+        if self.record_sigmf:
+            self.sigmf_writer = SigMFChunkWriter(
+                sample_rate=self.samp_rate,
+                center_freq=self.center_freq,
+                output_path=self.output_path,
+                duration_sec=self.chunk_seconds,
+            )
+        else:
+            self.sigmf_writer = None
+
+        self.freq_sink = qtgui.freq_sink_c(
+            1024,
+            QtGui.QFont().Normal,
+            self.center_freq,
+            self.samp_rate,
+            "",
+            1,
+            None,
+        )
+        self.freq_sink.set_update_time(0.08)
+        self.freq_sink.enable_grid(True)
+        self.freq_sink.enable_autoscale(False)
+        self.freq_sink.set_y_axis(-140, 10)
+        self.freq_sink.set_fft_average(0.18)
+        self.freq_sink.enable_axis_labels(True)
+        self.freq_sink.set_trigger_mode(qtgui.TRIG_MODE_FREE, 0.0, 0, "")
+        self.freq_sink.set_line_label(0, "RF Spectrum")
+        self.freq_sink.set_line_width(0, 1)
+        self.freq_sink.set_line_color(0, "cyan")
+
+        self.waterfall_sink = qtgui.waterfall_sink_c(
+            1536,
+            QtGui.QFont().Normal,
+            self.center_freq,
+            self.samp_rate,
+            "",
+            1,
+            None,
+        )
+        self.waterfall_sink.set_update_time(0.06)
+        self.waterfall_sink.enable_grid(False)
+        self.waterfall_sink.enable_axis_labels(True)
+        self.waterfall_sink.set_intensity_range(-115, -20)
+
+        self.connect((self.src, 0), (self.iq, 0))
+        self.connect((self.iq, 0), (self.scale, 0))
+
+        if self.record_sigmf:
+            self.connect((self.scale, 0), (self.sigmf_writer, 0))
+            self.connect((self.sigmf_writer, 0), (self.freq_sink, 0))
+            self.connect((self.sigmf_writer, 0), (self.waterfall_sink, 0))
+        else:
+            self.connect((self.scale, 0), (self.freq_sink, 0))
+            self.connect((self.scale, 0), (self.waterfall_sink, 0))
+
+        freq_widget = sip.wrapinstance(self.freq_sink.qwidget(), Qt.QWidget)
+        waterfall_widget = sip.wrapinstance(self.waterfall_sink.qwidget(), Qt.QWidget)
+
+        self._polish_plot_widget(freq_widget)
+        self._polish_plot_widget(waterfall_widget)
+
+        spectrum_panel = PanelFrame(
+            "SPECTRUM",
+            f"Center {self._fmt_freq(self.center_freq)} • Span ~{self._fmt_rate(self.samp_rate)}"
+        )
+        spectrum_panel.addWidget(freq_widget)
+
+        if self.record_sigmf:
+            waterfall_subtitle = f"Source {self.source_label} • SigMF chunks {self.chunk_seconds}s"
+        else:
+            waterfall_subtitle = f"Source {self.source_label} • SigMF OFF"
+
+        waterfall_panel = PanelFrame("WATERFALL", waterfall_subtitle)
+        waterfall_panel.addWidget(waterfall_widget)
+
+        root.addWidget(spectrum_panel, 2)
+        root.addWidget(waterfall_panel, 5)
+
+    def _apply_theme(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #08111b;
+                color: #d7e3f2;
+                font-family: "Segoe UI", "Inter", "DejaVu Sans", sans-serif;
+                font-size: 10pt;
+            }
+
+            QFrame#headerBar {
+                background-color: #0c1724;
+                border: 1px solid #21384d;
+                border-radius: 10px;
+            }
+
+            QLabel#appTitle {
+                color: #edf6ff;
+                font-size: 15pt;
+                font-weight: 700;
+                letter-spacing: 0.8px;
+            }
+
+            QLabel#appSubtitle {
+                color: #7f9bb4;
+                font-size: 9pt;
+                font-weight: 400;
+            }
+
+            QFrame#metaBadge, QFrame#metaBadgeAccent {
+                background-color: #0f1d2c;
+                border: 1px solid #28465f;
+                border-radius: 9px;
+            }
+
+            QFrame#metaBadgeAccent {
+                border: 1px solid #3a7aa8;
+                background-color: #112334;
+            }
+
+            QLabel#badgeLabel {
+                color: #7d97ad;
+                font-size: 8pt;
+                font-weight: 500;
+            }
+
+            QLabel#badgeValue {
+                color: #edf6ff;
+                font-size: 10pt;
+                font-weight: 700;
+            }
+
+            QFrame#panelFrame {
+                background-color: #0d1724;
+                border: 1px solid #20384c;
+                border-radius: 12px;
+            }
+
+            QLabel#panelTitle {
+                color: #e6f2ff;
+                font-size: 10pt;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+            }
+
+            QLabel#panelSubtitle {
+                color: #7893a8;
+                font-size: 8.5pt;
+                font-weight: 400;
+            }
+        """)
+
+    def _polish_plot_widget(self, widget: Qt.QWidget):
+        widget.setStyleSheet("""
+            QWidget {
+                background-color: #0a1320;
+                border: none;
+            }
+        """)
+
+    @staticmethod
+    def _fmt_freq(freq_hz: float) -> str:
+        if freq_hz >= 1e9:
+            return f"{freq_hz/1e9:.6f} GHz"
+        if freq_hz >= 1e6:
+            return f"{freq_hz/1e6:.3f} MHz"
+        if freq_hz >= 1e3:
+            return f"{freq_hz/1e3:.3f} kHz"
+        return f"{freq_hz:.0f} Hz"
+
+    @staticmethod
+    def _fmt_rate(rate: float) -> str:
+        if rate >= 1e6:
+            return f"{rate/1e6:.3f} MS/s"
+        if rate >= 1e3:
+            return f"{rate/1e3:.1f} kS/s"
+        return f"{rate:.0f} S/s"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Live spectrogram from E320 FIFO IQ stream + optional SigMF chunk writer"
+    )
+    parser.add_argument("--fifo", default="/tmp/e320_iq.pipe", help="FIFO path")
+    parser.add_argument("--samp-rate", type=float, default=250e3, help="Sample rate")
+    parser.add_argument("--center-freq", type=float, default=102.7e6, help="Center frequency")
+    parser.add_argument("--output-path", default="./sigmf_files", help="Directory for SigMF files")
+    parser.add_argument("--chunk-seconds", type=int, default=5, help="Chunk duration in seconds")
+    parser.add_argument("--gain-label", default="N/A", help="Display-only gain label")
+    parser.add_argument("--source-label", default="FIFO / SSH / E320", help="Display-only source label")
+    parser.add_argument("--no-sigmf", action="store_true", help="Disable SigMF file writing")
+    args = parser.parse_args()
+
+    qapp = Qt.QApplication(sys.argv)
+
+    app_font = QtGui.QFont("Segoe UI", 10)
+    qapp.setFont(app_font)
+
+    tb = HostFIFOSpectrogramSigMF(
+        fifo_path=args.fifo,
+        samp_rate=args.samp_rate,
+        center_freq=args.center_freq,
+        output_path=args.output_path,
+        chunk_seconds=args.chunk_seconds,
+        gain_label=args.gain_label,
+        source_label=args.source_label,
+        record_sigmf=not args.no_sigmf,
+    )
+
+    tb.start()
+    tb.show()
+
+    def quitting():
+        tb.stop()
+        tb.wait()
+
+    qapp.aboutToQuit.connect(quitting)
+    qapp.exec_()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+----------------------
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# -------------------------
+# Defaults
+# -------------------------
+E320_IP="192.168.10.2"
+FIFO_PATH="/tmp/e320_iq.pipe"
+FREQ="102700000"
+RATE="1000000"
+GAIN="40"
+ANT="RX2"
+OUTPUT_PATH="$HOME/sigmf_files"
+CHUNK_SECONDS="5"
+GUI_SCRIPT="$HOME/waterfall_sigmf.py"
+PYTHON_BIN="python3"
+NO_SIGMF="0"
+
+# -------------------------
+# Helpers
+# -------------------------
+log() {
+  printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./launch_e320_spectrogram.sh [options]
+
+Options:
+  --freq HZ            Center frequency in Hz (default: 102700000)
+  --rate SPS           Sample rate in samples/sec (default: 1000000)
+  --gain DB            RX gain in dB (default: 40)
+  --ant NAME           RX antenna name (default: RX2)
+  --ip ADDR            E320 IP address (default: 192.168.10.2)
+  --fifo PATH          FIFO path on host (default: /tmp/e320_iq.pipe)
+  --output-path PATH   SigMF output directory (default: ~/sigmf_files)
+  --chunk-seconds N    SigMF chunk duration in seconds (default: 5)
+  --gui-script PATH    Host GUI Python script (default: ~/waterfall_sigmf.py)
+  --python BIN         Python interpreter for GUI script (default: python3)
+  --no-sigmf           Disable SigMF file writing in the GUI
+  -h, --help           Show this help
+
+Examples:
+  ./launch_e320_spectrogram.sh
+  ./launch_e320_spectrogram.sh --freq 98100000 --rate 250000 --gain 40
+  ./launch_e320_spectrogram.sh --freq 102700000 --rate 1000000 --gain 35 --ant RX2
+  ./launch_e320_spectrogram.sh --python "$HOME/sigmf-venv/bin/python"
+  ./launch_e320_spectrogram.sh --no-sigmf
+EOF
+}
+
+cleanup() {
+  set +e
+  log "Cleaning up..."
+
+  if [[ -n "${SSH_PID:-}" ]] && kill -0 "$SSH_PID" 2>/dev/null; then
+    log "Stopping SSH IQ stream (PID $SSH_PID)"
+    kill "$SSH_PID" 2>/dev/null || true
+    wait "$SSH_PID" 2>/dev/null || true
+  fi
+
+  [[ -p "$FIFO_PATH" ]] && rm -f "$FIFO_PATH"
+}
+trap cleanup EXIT INT TERM
+
+# -------------------------
+# Parse args
+# -------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --freq)
+      FREQ="$2"; shift 2 ;;
+    --rate)
+      RATE="$2"; shift 2 ;;
+    --gain)
+      GAIN="$2"; shift 2 ;;
+    --ant)
+      ANT="$2"; shift 2 ;;
+    --ip)
+      E320_IP="$2"; shift 2 ;;
+    --fifo)
+      FIFO_PATH="$2"; shift 2 ;;
+    --output-path)
+      OUTPUT_PATH="$2"; shift 2 ;;
+    --chunk-seconds)
+      CHUNK_SECONDS="$2"; shift 2 ;;
+    --gui-script)
+      GUI_SCRIPT="$2"; shift 2 ;;
+    --python)
+      PYTHON_BIN="$2"; shift 2 ;;
+    --no-sigmf)
+      NO_SIGMF="1"; shift ;;
+    -h|--help)
+      usage; exit 0 ;;
+    *)
+      echo "Unknown option: $1"
+      echo
+      usage
+      exit 1 ;;
+  esac
+done
+
+# Expand ~ if present
+OUTPUT_PATH="${OUTPUT_PATH/#\~/$HOME}"
+GUI_SCRIPT="${GUI_SCRIPT/#\~/$HOME}"
+FIFO_PATH="${FIFO_PATH/#\~/$HOME}"
+
+# -------------------------
+# Sanity checks
+# -------------------------
+command -v ssh >/dev/null 2>&1 || { echo "ssh not found"; exit 1; }
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || { echo "python not found: $PYTHON_BIN"; exit 1; }
+
+[[ -f "$GUI_SCRIPT" ]] || {
+  echo "GUI script not found: $GUI_SCRIPT"
+  exit 1
+}
+
+# Only create output directory if SigMF is enabled
+if [[ "$NO_SIGMF" != "1" ]]; then
+  mkdir -p "$OUTPUT_PATH"
+fi
+
+# Basic numeric checks
+[[ "$FREQ" =~ ^[0-9]+$ ]] || { echo "--freq must be an integer Hz value"; exit 1; }
+[[ "$RATE" =~ ^[0-9]+$ ]] || { echo "--rate must be an integer samples/sec value"; exit 1; }
+[[ "$GAIN" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--gain must be numeric"; exit 1; }
+[[ "$CHUNK_SECONDS" =~ ^[0-9]+$ ]] || { echo "--chunk-seconds must be an integer"; exit 1; }
+
+# -------------------------
+# Setup FIFO
+# -------------------------
+log "Preparing FIFO: $FIFO_PATH"
+rm -f "$FIFO_PATH"
+mkfifo "$FIFO_PATH"
+
+# -------------------------
+# Start SSH stream
+# -------------------------
+log "Starting SSH IQ stream from E320"
+log "IP=$E320_IP FREQ=$FREQ RATE=$RATE GAIN=$GAIN ANT=$ANT"
+
+ssh root@"$E320_IP" "/usr/lib/uhd/examples/rx_samples_to_file \
+  --args \"addr=127.0.0.1\" \
+  --ant $ANT \
+  --file /dev/stdout \
+  --type short \
+  --rate $RATE \
+  --freq $FREQ \
+  --gain $GAIN \
+  --nsamps 0" > "$FIFO_PATH" &
+
+SSH_PID=$!
+
+sleep 1
+
+if ! kill -0 "$SSH_PID" 2>/dev/null; then
+  echo "SSH stream failed to start"
+  exit 1
+fi
+
+# -------------------------
+# Launch GUI
+# -------------------------
+GUI_ARGS=(
+  --fifo "$FIFO_PATH"
+  --samp-rate "$RATE"
+  --center-freq "$FREQ"
+  --output-path "$OUTPUT_PATH"
+  --chunk-seconds "$CHUNK_SECONDS"
+  --gain-label "${GAIN} dB"
+  --source-label "E320 / ${ANT} / SSH FIFO"
+)
+
+if [[ "$NO_SIGMF" == "1" ]]; then
+  GUI_ARGS+=(--no-sigmf)
+fi
+
+log "Launching host GUI"
+"$PYTHON_BIN" "$GUI_SCRIPT" "${GUI_ARGS[@]}"
+
+log "GUI exited"
