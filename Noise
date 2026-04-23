@@ -71,3 +71,57 @@ python3 jam_e320.py \
 This should raise the waterfall/noise floor without touching the E320 RF hardware.
 
 That is the safest way to test your spectrogram.
+
+
+
+
+For your GUI centered at 102.700 MHz, the range 102.6–102.8 MHz is:
+
+-100 kHz to +100 kHz from center
+
+To visually “block” that whole range in the FIFO test stream without transmitting, generate band-limited noise across ±100 kHz.
+
+Use this as the FIFO generator:
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+python3 - <<'PY' > /tmp/e320_iq.pipe
+import numpy as np
+import sys
+rate = 1_000_000
+block = 16384
+amp = 0.75
+# Make broadband-ish noise and low-pass it in frequency domain to +/-100 kHz
+bw_hz = 200_000
+half_bw = bw_hz / 2
+freqs = np.fft.fftfreq(block, d=1/rate)
+mask = np.abs(freqs) <= half_bw
+while True:
+    noise = (np.random.randn(block) + 1j*np.random.randn(block)) / np.sqrt(2)
+    X = np.fft.fft(noise)
+    X[~mask] = 0
+    x = np.fft.ifft(X)
+    x = x / (np.max(np.abs(x)) + 1e-12)
+    x = amp * x
+    iq = np.empty(block * 2, dtype=np.int16)
+    iq[0::2] = np.clip(np.real(x) * 32767, -32768, 32767)
+    iq[1::2] = np.clip(np.imag(x) * 32767, -32768, 32767)
+    sys.stdout.buffer.write(iq.tobytes())
+    sys.stdout.buffer.flush()
+PY
+
+Then run your GUI:
+
+python3 jam_e320.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000
+
+You should see a wide bright block from roughly:
+
+102.600 MHz to 102.800 MHz
+
+This only affects your local spectrogram test stream. It does not transmit or jam RF.
+
+
+
