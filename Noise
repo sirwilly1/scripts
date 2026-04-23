@@ -1,0 +1,73 @@
+Yes. Best option: do not transmit at all. Feed your spectrogram with a synthetic IQ stream on the host.
+
+That tests the FIFO + GNU Radio GUI path without broadcasting RF.
+
+Option 1 — Synthetic tone into FIFO
+
+Terminal 1:
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+python3 - <<'PY' > /tmp/e320_iq.pipe
+import numpy as np
+import sys, time
+rate = 1_000_000
+tone_hz = 100_000
+amp = 0.4
+block = 16384
+phase = 0.0
+while True:
+    n = np.arange(block)
+    x = amp * np.exp(1j * (2*np.pi*tone_hz*n/rate + phase))
+    phase += 2*np.pi*tone_hz*block/rate
+    iq = np.empty(block * 2, dtype=np.int16)
+    iq[0::2] = np.real(x) * 32767
+    iq[1::2] = np.imag(x) * 32767
+    sys.stdout.buffer.write(iq.tobytes())
+    sys.stdout.buffer.flush()
+PY
+
+Terminal 2:
+
+python3 jam_e320.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000
+
+You should see a spike at:
+
+102.800 MHz
+
+because the synthetic tone is +100 kHz from center.
+
+Option 2 — Synthetic Gaussian noise into FIFO
+
+Terminal 1:
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+python3 - <<'PY' > /tmp/e320_iq.pipe
+import numpy as np
+import sys
+amp = 0.15
+block = 16384
+while True:
+    i = np.random.normal(0, amp, block)
+    q = np.random.normal(0, amp, block)
+    iq = np.empty(block * 2, dtype=np.int16)
+    iq[0::2] = np.clip(i * 32767, -32768, 32767)
+    iq[1::2] = np.clip(q * 32767, -32768, 32767)
+    sys.stdout.buffer.write(iq.tobytes())
+    sys.stdout.buffer.flush()
+PY
+
+Terminal 2:
+
+python3 jam_e320.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000
+
+This should raise the waterfall/noise floor without touching the E320 RF hardware.
+
+That is the safest way to test your spectrogram.
