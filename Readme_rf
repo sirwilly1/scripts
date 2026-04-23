@@ -1,0 +1,303 @@
+# E320 FIFO Spectrogram Toolkit
+A host-side SDR visualization toolkit for the Ettus E320.
+This project allows you to view **live RF spectrum and waterfall data** from an E320 on a separate host machine using a FIFO stream over SSH. It also supports **synthetic signal generation** for GUI testing without any RF hardware activity.
+---
+# Overview
+Instead of controlling the E320 directly from the host with UHD, the radio captures IQ samples locally and streams them to the host.
+This architecture avoids host/UHD version mismatch issues and keeps the radio-side capture path simple and reliable.
+```text
+E320 RX Capture (local UHD)
+        ↓
+SSH stdout stream
+        ↓
+Host FIFO (/tmp/e320_iq.pipe)
+        ↓
+GNU Radio + PyQt GUI
+        ↓
+Spectrum + Waterfall
+
+⸻
+
+Included Components
+
+1. waterfall_sigmf.py
+
+Primary host-side GUI application.
+
+Features:
+
+* Reads interleaved int16 IQ samples from a FIFO
+* Converts to complex baseband IQ
+* Live FFT spectrum display
+* Live waterfall display
+* Dark professional SDR-style interface
+* Optional rolling SigMF recording
+* Metadata header (frequency, gain, source, status)
+
+⸻
+
+2. launch_e320_spectrogram.sh
+
+One-command launcher.
+
+Automates:
+
+* FIFO creation
+* E320 SSH receive stream
+* GUI startup
+* cleanup on exit
+
+⸻
+
+3. Synthetic Signal Generator
+
+Host-side FIFO generator used to simulate RF scenes without using the E320.
+
+Useful for:
+
+* GUI development
+* waterfall tuning
+* FFT testing
+* occupied-band simulation
+* blocker/interference simulation
+
+⸻
+
+Installation Requirements
+
+Host machine:
+
+* Python 3
+* GNU Radio
+* PyQt5
+* NumPy
+* SigMF Python package (optional if recording enabled)
+* SSH access to E320
+
+⸻
+
+Live E320 Mode
+
+Launch Everything Automatically
+
+./launch_e320_spectrogram.sh \
+  --freq 102700000 \
+  --rate 1000000 \
+  --gain 40 \
+  --ant RX2
+
+This will:
+
+1. Create FIFO:
+
+/tmp/e320_iq.pipe
+
+2. Start E320 receive stream
+3. Launch GUI
+
+⸻
+
+Disable SigMF Recording
+
+./launch_e320_spectrogram.sh \
+  --freq 102700000 \
+  --rate 1000000 \
+  --gain 40 \
+  --no-sigmf
+
+⸻
+
+Manual GUI Launch
+
+If IQ data is already flowing into the FIFO:
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000
+
+Disable recording:
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000 \
+  --no-sigmf
+
+⸻
+
+Synthetic RF Scene Mode
+
+No E320 required.
+
+Creates a realistic occupied band from:
+
+102.600 MHz to 102.800 MHz
+
+when centered at:
+
+102.700 MHz
+
+Result:
+
+* soft band edges
+* fading energy
+* realistic texture
+* waterfall movement
+
+⸻
+
+Start Synthetic Generator
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+python3 synthetic_blocker.py > /tmp/e320_iq.pipe
+
+Then launch GUI:
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000 \
+  --no-sigmf
+
+⸻
+
+Signal Flow Details
+
+Live E320 Stream
+
+Internally the launcher runs:
+
+ssh root@192.168.10.2 '/usr/lib/uhd/examples/rx_samples_to_file \
+  --args "addr=127.0.0.1" \
+  --ant RX2 \
+  --file /dev/stdout \
+  --type short \
+  --rate 1000000 \
+  --freq 102700000 \
+  --gain 40 \
+  --nsamps 0'
+
+This outputs:
+
+int16 I,Q,int16 I,Q,int16 I,Q...
+
+which the GUI converts to complex float samples.
+
+⸻
+
+Frequency Mapping
+
+If GUI center frequency is:
+
+102.700 MHz
+
+Then:
+
+Displayed Frequency	Relative Offset
+102.600 MHz	-100 kHz
+102.700 MHz	0
+102.800 MHz	+100 kHz
+
+⸻
+
+SigMF Recording
+
+When enabled, the GUI writes rolling capture files:
+
+sigmf_YYYYMMDDTHHMMSSZ_0000.sigmf-data
+sigmf_YYYYMMDDTHHMMSSZ_0000.sigmf-meta
+
+Each chunk duration is configurable:
+
+--chunk-seconds 5
+
+Disable completely:
+
+--no-sigmf
+
+⸻
+
+Troubleshooting
+
+FIFO Missing
+
+Create manually:
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+⸻
+
+Blank GUI
+
+Check:
+
+* SSH stream is running
+* sample rates match
+* center frequency matches
+* FIFO contains data
+
+⸻
+
+Distorted Display
+
+Reduce gain:
+
+--gain 30
+
+⸻
+
+Wrong Spectrum Span
+
+Set matching sample rate:
+
+--rate 1000000
+--samp-rate 1000000
+
+⸻
+
+Safety Notes
+
+Synthetic Mode
+
+* No RF transmit
+* No E320 required
+* Safe for offline testing
+
+Live E320 Mode
+
+* Receive only unless you separately start TX
+* No transmission occurs from this toolkit
+
+⸻
+
+Recommended Usage
+
+Real RF Monitoring
+
+./launch_e320_spectrogram.sh --freq 102700000 --rate 1000000 --gain 40
+
+GUI Development / Testing
+
+python3 synthetic_blocker.py > /tmp/e320_iq.pipe
+python3 waterfall_sigmf.py --fifo /tmp/e320_iq.pipe --no-sigmf
+
+Long Capture Session
+
+./launch_e320_spectrogram.sh --chunk-seconds 30
+
+⸻
+
+Summary
+
+This toolkit gives you:
+
+* stable E320 remote receive workflow
+* modern SDR GUI on host machine
+* optional SigMF capture
+* synthetic RF scene generation
+* no host UHD dependency
+
+It is ideal for E320 remote monitoring, waterfall analysis, testing, and signal experimentation.
