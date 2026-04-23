@@ -1,0 +1,92 @@
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+python3 - <<'PY' > /tmp/e320_iq.pipe
+import numpy as np
+import sys
+import time
+
+rate = 1_000_000
+center_freq = 102_700_000
+
+block = 16384
+amp = 0.65
+
+# Desired occupied region relative to 102.700 MHz:
+# 102.600–102.800 MHz = -100 kHz to +100 kHz
+pass_half_bw = 100_000
+
+# Soft transition width at each edge
+edge_softness_hz = 35_000
+
+freqs = np.fft.fftfreq(block, d=1 / rate)
+
+def raised_cosine_bandshape(freqs, half_bw, soft_hz):
+    af = np.abs(freqs)
+    shape = np.zeros_like(freqs, dtype=np.float64)
+
+    flat = af <= (half_bw - soft_hz)
+    edge = (af > (half_bw - soft_hz)) & (af <= half_bw)
+
+    shape[flat] = 1.0
+
+    # Smooth cosine rolloff to zero at the band edges
+    x = (af[edge] - (half_bw - soft_hz)) / soft_hz
+    shape[edge] = 0.5 * (1.0 + np.cos(np.pi * x))
+
+    return shape
+
+bandshape = raised_cosine_bandshape(freqs, pass_half_bw, edge_softness_hz)
+
+# Add slight spectral ripple so it does not look mathematically perfect
+ripple = 1.0 + 0.10 * np.sin(2 * np.pi * freqs / 37_000) + 0.05 * np.sin(2 * np.pi * freqs / 91_000)
+bandshape = np.clip(bandshape * ripple, 0.0, 1.2)
+
+t = 0.0
+dt = block / rate
+
+while True:
+    # Complex white noise
+    noise = (np.random.randn(block) + 1j * np.random.randn(block)) / np.sqrt(2)
+
+    # Band-limit with soft edges
+    X = np.fft.fft(noise)
+    X *= bandshape
+    x = np.fft.ifft(X)
+
+    # Slow fading / breathing
+    slow_fade = 0.82 + 0.18 * np.sin(2 * np.pi * 0.35 * t)
+
+    # Small random block-to-block power variation
+    random_fade = np.random.normal(1.0, 0.035)
+
+    # Mild AM ripple to create horizontal texture in waterfall
+    n = np.arange(block)
+    am_texture = 1.0 + 0.04 * np.sin(2 * np.pi * 17.0 * (t + n / rate))
+    am_texture += 0.025 * np.sin(2 * np.pi * 43.0 * (t + n / rate))
+
+    x *= slow_fade * random_fade * am_texture
+
+    # Normalize gently but avoid making every block identical
+    rms = np.sqrt(np.mean(np.abs(x) ** 2)) + 1e-12
+    x = x / rms
+    x = amp * x
+
+    # Add a little broadband receiver-like floor outside the blocker
+    floor = 0.035 * (np.random.randn(block) + 1j * np.random.randn(block)) / np.sqrt(2)
+    x = x + floor
+
+    # Soft limiting so it looks RF-ish and avoids int16 clipping
+    mag = np.abs(x)
+    over = mag > 0.98
+    x[over] = x[over] / mag[over] * 0.98
+
+    iq = np.empty(block * 2, dtype=np.int16)
+    iq[0::2] = np.clip(np.real(x) * 32767, -32768, 32767)
+    iq[1::2] = np.clip(np.imag(x) * 32767, -32768, 32767)
+
+    sys.stdout.buffer.write(iq.tobytes())
+    sys.stdout.buffer.flush()
+
+    t += dt
+PY
