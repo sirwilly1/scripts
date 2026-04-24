@@ -1,0 +1,71 @@
+Synthetic E320 Multi-Channel IQ Data
+========================================
+
+Purpose:
+  Synthetic multi-channel raw IQ data for testing a GNU Radio
+  FIFO/file source, spectrum display, or waterfall/spectrogram viewer.
+
+Baseband / RF Metadata:
+  Center frequency label: 102700000 Hz (102.700000 MHz)
+  Sample rate:            1000000 samples/second
+  Duration:               0.250000 seconds
+  Complex IQ samples:     250000
+  Nyquist span:           +/- 500000 Hz
+
+Sample Format:
+  File format:            raw binary
+  Data type:              signed 16-bit integer
+  IQ layout:              interleaved I,Q,I,Q,...
+  GNU Radio equivalent:   short / interleaved SC16
+  Byte order:             native little-endian int16
+  Scale to float:         I_float = I_int16 / 32768.0
+                          Q_float = Q_int16 / 32768.0
+
+Generated Files:
+  IQ file:                e320_iq_multichannel.sc16
+  IQ file size:           1000000 bytes
+  Spectrogram image:      e320_iq_multichannel_spectrogram.png
+
+Synthetic Channels:
+  Name  RF Frequency MHz   Offset kHz   Half-BW kHz   Approx Occupied BW kHz   Amplitude
+  ----  ----------------   ----------   -----------   ----------------------   ---------
+  CH1         102.450000         -250            35                       70        0.38
+  CH2         102.610000          -90            45                       90        0.48
+  CH3         102.820000         +120            55                      110        0.42
+  CH4         103.010000         +310            30                       60        0.34
+
+First 20 Interleaved IQ Sample Pairs:
+  Index        I_int16        Q_int16
+  -----   ------------   ------------
+      0            927          18967
+      1          21215          15209
+      2          11972          12072
+      3          10028          -1421
+      4          23037          -5423
+      5          25247          -6580
+      6          10474         -11345
+      7         -15712          -6214
+      8         -31465           6409
+      9         -25086          11114
+     10         -11979          -9767
+     11          -8796         -30883
+     12           4138         -15711
+     13          22842          21804
+     14          28260          12518
+     15          11044            863
+     16         -21146          24165
+     17         -21323          24009
+     18          10802          -4818
+     19          15826         -24422
+
+GNU Radio Reader Settings:
+  Source type:            File Source or FIFO File Source
+  Input item type:        short
+  Convert pattern:        interleaved short IQ -> complex float
+  Sample rate:            1e6
+  Center frequency label: 102.7e6
+
+Notes:
+  This is synthetic data. It does not require UHD or an Ettus E320.
+  It is intended to visually resemble multiple RF channels in a
+  1 MHz-wide complex baseband capture centered at 102.700 MHz.
