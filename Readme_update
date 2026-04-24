@@ -1,0 +1,43 @@
+# Quick Start
+## Live E320 Mode
+### Step 1) Run the launcher
+```bash
+./launch_e320_spectrogram.sh \
+  --freq 102700000 \
+  --rate 1000000 \
+  --gain 40 \
+  --ant RX2 \
+  --no-sigmf
+
+Step 2) View the GUI
+
+The spectrum and waterfall window should open automatically.
+
+Step 3) Stop
+
+Close the GUI window or press Ctrl+C.
+
+⸻
+
+Synthetic Test Mode
+
+Step 1) Create the FIFO
+
+rm -f /tmp/e320_iq.pipe
+mkfifo /tmp/e320_iq.pipe
+
+Step 2) Start the synthetic generator
+
+python3 synthetic_blocker.py > /tmp/e320_iq.pipe
+
+Step 3) Launch the GUI
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000 \
+  --no-sigmf
+
+Step 4) Stop
+
+Press Ctrl+C in the synthetic generator terminal and close the GUI.
