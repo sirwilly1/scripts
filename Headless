@@ -1,0 +1,128 @@
+Make the changes in 4 places.
+
+1) Inside SigMFChunkWriter._write_chunk()
+
+At the very end of _write_chunk(), right after:
+
+with open(meta_path, "w") as f:
+    f.write(meta.dumps())
+
+add:
+
+print(
+    f"[SigMF] wrote chunk {self.file_index:04d} | "
+    f"data={data_path} | meta={meta_path} | "
+    f"samples={len(data)} | rate={self.sample_rate} | center_freq={self.center_freq}",
+    flush=True,
+)
+
+⸻
+
+2) Add the new headless class
+
+Put this after the SigMFChunkWriter class and before MetadataBadge:
+
+class HeadlessSigMFRecorder(gr.top_block):
+    def __init__(
+        self,
+        fifo_path="/tmp/e320_iq.pipe",
+        samp_rate=250e3,
+        center_freq=102.7e6,
+        output_path="./sigmf_files",
+        chunk_seconds=5,
+    ):
+        gr.top_block.__init__(self, "Headless FIFO SigMF Recorder")
+        self.src = blocks.file_source(
+            itemsize=gr.sizeof_short,
+            filename=fifo_path,
+            repeat=False,
+        )
+        self.iq = blocks.interleaved_short_to_complex(False, False)
+        self.scale = blocks.multiply_const_cc(1.0 / 32768.0)
+        self.sigmf_writer = SigMFChunkWriter(
+            sample_rate=samp_rate,
+            center_freq=center_freq,
+            output_path=output_path,
+            duration_sec=chunk_seconds,
+        )
+        self.connect((self.src, 0), (self.iq, 0))
+        self.connect((self.iq, 0), (self.scale, 0))
+        self.connect((self.scale, 0), (self.sigmf_writer, 0))
+
+So your file order becomes:
+
+imports
+SigMFChunkWriter
+HeadlessSigMFRecorder
+MetadataBadge
+PanelFrame
+HostFIFOSpectrogramSigMF
+main()
+
+⸻
+
+3) Add the CLI flag in main()
+
+In main(), near your other parser.add_argument(...) lines, add:
+
+parser.add_argument("--headless", action="store_true", help="Run without GUI; only write SigMF files")
+
+Put it near:
+
+parser.add_argument("--no-sigmf", action="store_true", help="Disable SigMF file writing")
+
+⸻
+
+4) Add the headless branch before Qt starts
+
+In main(), find:
+
+args = parser.parse_args()
+qapp = Qt.QApplication(sys.argv)
+
+Insert this between those two lines:
+
+if args.headless:
+    if getattr(args, "no_sigmf", False):
+        raise SystemExit("--headless cannot be used with --no-sigmf")
+    print("[headless] starting FIFO -> SigMF recorder", flush=True)
+    print(f"[headless] fifo={args.fifo}", flush=True)
+    print(f"[headless] sample_rate={args.samp_rate}", flush=True)
+    print(f"[headless] center_freq={args.center_freq}", flush=True)
+    print(f"[headless] output_path={args.output_path}", flush=True)
+    print(f"[headless] chunk_seconds={args.chunk_seconds}", flush=True)
+    tb = HeadlessSigMFRecorder(
+        fifo_path=args.fifo,
+        samp_rate=args.samp_rate,
+        center_freq=args.center_freq,
+        output_path=args.output_path,
+        chunk_seconds=args.chunk_seconds,
+    )
+    try:
+        tb.start()
+        input("[headless] recording... press Enter to stop\n")
+    except KeyboardInterrupt:
+        print("\n[headless] stopping...", flush=True)
+    finally:
+        tb.stop()
+        tb.wait()
+        print("[headless] stopped", flush=True)
+    return
+
+So that section should look like:
+
+args = parser.parse_args()
+if args.headless:
+    ...
+    return
+qapp = Qt.QApplication(sys.argv)
+
+Run it with:
+
+python3 waterfall_sigmf.py \
+  --fifo /tmp/e320_iq.pipe \
+  --samp-rate 1000000 \
+  --center-freq 102700000 \
+  --output-path ./sigmf_files \
+  --chunk-seconds 5 \
+  --headless
