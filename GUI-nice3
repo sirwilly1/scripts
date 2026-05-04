@@ -1,0 +1,130 @@
+Good idea—that will make the sidebar feel much more “real” (like a device tile).
+
+You want a device image/logo under the “Desktop / Laptop” title, inside SideLabelPanel.
+
+⸻
+
+🔧 Modify SideLabelPanel (add image support)
+
+Replace your current class with this:
+
+class SideLabelPanel(QtWidgets.QFrame):
+    def __init__(self, title, info_text, image_path=None):
+        super().__init__()
+        self.setObjectName("panelFrame")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 12, 12)
+        layout.setSpacing(14)
+        # Title
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("sideTitle")
+        title_lbl.setAlignment(QtCore.Qt.AlignLeft)
+        layout.addWidget(title_lbl)
+        # 🔥 NEW: Image
+        if image_path and os.path.exists(image_path):
+            img_label = QtWidgets.QLabel()
+            pixmap = QtGui.QPixmap(image_path)
+            # scale nicely
+            pixmap = pixmap.scaled(
+                120, 120,
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation
+            )
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+            layout.addWidget(img_label)
+        # Info text
+        info_lbl = QtWidgets.QLabel(info_text)
+        info_lbl.setObjectName("sideInfo")
+        info_lbl.setAlignment(QtCore.Qt.AlignLeft)
+        layout.addWidget(info_lbl)
+        layout.addStretch(1)
+
+⸻
+
+🧠 Update HostRow to pass images
+
+Modify constructor:
+
+class HostRow(QtWidgets.QWidget):
+    def __init__(
+        self,
+        side_title,
+        side_info,
+        image_path,   # 👈 ADD THIS
+        ...
+
+Then change:
+
+side = SideLabelPanel(side_title, side_info)
+
+➡️ to:
+
+side = SideLabelPanel(side_title, side_info, image_path=image_path)
+
+⸻
+
+⚙️ Update where you create rows
+
+Desktop
+
+local_row = HostRow(
+    side_title="Desktop",
+    side_info="Text\nInfo",
+    image_path="./images/desktop.png",   # 👈 ADD
+
+Laptop
+
+remote_row = HostRow(
+    side_title="Laptop",
+    side_info="Text\nInfo",
+    image_path="./images/laptop.png",   # 👈 ADD
+
+⸻
+
+📁 Folder structure
+
+Create:
+
+mkdir images
+
+Put files like:
+
+images/
+  desktop.png
+  laptop.png
+
+⸻
+
+🎨 Optional: make it look cleaner (recommended)
+
+Add this to your stylesheet:
+
+QLabel {
+    background: transparent;
+}
+
+⸻
+
+🚀 Result
+
+You’ll now have:
+
+Desktop
+   [image here]
+   Text
+   Info
+
+Exactly like a device card instead of just text.
+
+⸻
+
+If you want next step (worth it)
+
+I can upgrade this to:
+
+* 🔵 ￼ circular device icons with glow
+* 🟢 ￼ status indicator (online/offline)
+* 📡 ￼ live metrics (CPU, network, SDR status)
+
+Just tell me 👍
