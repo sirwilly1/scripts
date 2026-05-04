@@ -1,0 +1,36 @@
+class SideLabelPanel(QtWidgets.QFrame):
+    def __init__(self, title, info_text, image_path=None):
+        super().__init__()
+        self.setObjectName("panelFrame")
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 12, 12)
+        layout.setSpacing(14)
+
+        # Title
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("sideTitle")
+        layout.addWidget(title_lbl)
+
+        # Image (optional)
+        if image_path and os.path.exists(image_path):
+            img_label = QtWidgets.QLabel()
+
+            pixmap = QtGui.QPixmap(image_path)
+            pixmap = pixmap.scaled(
+                120, 120,
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation
+            )
+
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+
+            layout.addWidget(img_label)
+
+        # Info
+        info_lbl = QtWidgets.QLabel(info_text)
+        info_lbl.setObjectName("sideInfo")
+        layout.addWidget(info_lbl)
+
+        layout.addStretch(1)
