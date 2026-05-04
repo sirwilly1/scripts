@@ -1,0 +1,20 @@
+python3 - <<'PY'
+from PIL import Image
+
+inp = "images/laptop.png"
+out = "images/laptop_transparent.png"
+
+img = Image.open(inp).convert("RGBA")
+pixels = img.load()
+
+for y in range(img.height):
+    for x in range(img.width):
+        r, g, b, a = pixels[x, y]
+
+        # remove near-white background
+        if r > 235 and g > 235 and b > 235:
+            pixels[x, y] = (255, 255, 255, 0)
+
+img.save(out)
+print("saved:", out)
+PY
