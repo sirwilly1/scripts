@@ -1,0 +1,554 @@
+Here is the full updated code.
+
+Save as:
+
+rf_site_dashboard.py
+#!/usr/bin/env python3
+import sys
+import os
+import json
+import argparse
+import shlex
+from pathlib import Path
+from PyQt5 import QtCore, QtGui, QtWidgets
+APP_STYLE = """
+QWidget {
+    background-color: #08111b;
+    color: #d7e3f2;
+    font-family: "Segoe UI", "Inter", "DejaVu Sans", sans-serif;
+    font-size: 10pt;
+}
+QFrame#headerBar {
+    background-color: #0c1724;
+    border: 1px solid #21384d;
+    border-radius: 10px;
+}
+QLabel#appTitle {
+    color: #edf6ff;
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
+QLabel#appSubtitle {
+    color: #7f9bb4;
+    font-size: 9pt;
+}
+QFrame#panelFrame {
+    background-color: #0d1724;
+    border: 1px solid #20384c;
+    border-radius: 12px;
+}
+QLabel#panelTitle {
+    color: #9ccaff;
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}
+QLabel#panelSubtitle {
+    color: #8db7df;
+    font-size: 8.5pt;
+}
+QLabel#sideTitle {
+    color: #edf6ff;
+    font-size: 14pt;
+    font-weight: 700;
+}
+QLabel#sideInfo {
+    color: #8db7df;
+    font-size: 10pt;
+}
+QPushButton {
+    background-color: #112334;
+    color: #b9dcff;
+    border: 1px solid #3a7aa8;
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-weight: 700;
+}
+QPushButton:hover {
+    background-color: #17334b;
+}
+QPushButton:pressed {
+    background-color: #0b1b29;
+}
+QTextEdit {
+    background-color: #03070d;
+    color: #d7e3f2;
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    font-family: "DejaVu Sans Mono", "Consolas", monospace;
+    font-size: 9pt;
+}
+QScrollArea {
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    background-color: #050b12;
+}
+QTableWidget {
+    background-color: #050b12;
+    color: #d7e3f2;
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    gridline-color: #20384c;
+}
+QTableWidget::item {
+    padding: 6px;
+}
+QHeaderView::section {
+    background-color: #0c1724;
+    color: #8db7df;
+    border: 1px solid #20384c;
+    padding: 6px;
+    font-weight: 700;
+}
+QLabel#fileName {
+    color: #d7e3f2;
+    font-size: 8pt;
+}
+"""
+class PanelFrame(QtWidgets.QFrame):
+    def __init__(self, title: str, subtitle: str = ""):
+        super().__init__()
+        self.setObjectName("panelFrame")
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(12, 10, 12, 12)
+        outer.setSpacing(8)
+        self.header = QtWidgets.QHBoxLayout()
+        self.header.setContentsMargins(0, 0, 0, 0)
+        self.header.setSpacing(8)
+        title_col = QtWidgets.QVBoxLayout()
+        title_col.setSpacing(2)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("panelTitle")
+        title_col.addWidget(title_lbl)
+        if subtitle:
+            sub_lbl = QtWidgets.QLabel(subtitle)
+            sub_lbl.setObjectName("panelSubtitle")
+            title_col.addWidget(sub_lbl)
+        self.header.addLayout(title_col)
+        self.header.addStretch(1)
+        outer.addLayout(self.header)
+        self.body_layout = QtWidgets.QVBoxLayout()
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        self.body_layout.setSpacing(8)
+        outer.addLayout(self.body_layout)
+    def addWidget(self, widget, stretch=0):
+        self.body_layout.addWidget(widget, stretch)
+    def addHeaderWidget(self, widget):
+        self.header.addWidget(widget)
+class CliPanel(PanelFrame):
+    def __init__(self, title, subtitle, button_text, command, remote_host=None):
+        super().__init__(title, subtitle)
+        self.command = command
+        self.remote_host = remote_host
+        self.process = None
+        self.button = QtWidgets.QPushButton(button_text)
+        self.button.clicked.connect(self.run_command)
+        self.addHeaderWidget(self.button)
+        self.output = QtWidgets.QTextEdit()
+        self.output.setReadOnly(True)
+        self.addWidget(self.output, stretch=1)
+    def run_command(self):
+        if self.process and self.process.state() != QtCore.QProcess.NotRunning:
+            self.append_line("[already running]")
+            return
+        self.process = QtCore.QProcess(self)
+        if self.remote_host:
+            program = "ssh"
+            remote_cmd = f"bash -lc {shlex.quote(self.command)}"
+            args = ["-tt", self.remote_host, remote_cmd]
+            shown_cmd = f"ssh -tt {self.remote_host} {remote_cmd}"
+        else:
+            program = "bash"
+            args = ["-lc", self.command]
+            shown_cmd = self.command
+        self.append_line(f"$ {shown_cmd}\n")
+        self.process.readyReadStandardOutput.connect(self.read_stdout)
+        self.process.readyReadStandardError.connect(self.read_stderr)
+        self.process.finished.connect(self.process_finished)
+        self.process.start(program, args)
+    def read_stdout(self):
+        data = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
+        self.output.moveCursor(QtGui.QTextCursor.End)
+        self.output.insertPlainText(data)
+        self.output.verticalScrollBar().setValue(
+            self.output.verticalScrollBar().maximum()
+        )
+    def read_stderr(self):
+        data = bytes(self.process.readAllStandardError()).decode(errors="replace")
+        self.output.moveCursor(QtGui.QTextCursor.End)
+        self.output.insertPlainText(data)
+        self.output.verticalScrollBar().setValue(
+            self.output.verticalScrollBar().maximum()
+        )
+    def process_finished(self, exit_code, exit_status):
+        self.append_line(f"\n[finished] exit_code={exit_code}\n")
+    def append_line(self, text):
+        self.output.moveCursor(QtGui.QTextCursor.End)
+        self.output.insertPlainText(text + "\n")
+        self.output.verticalScrollBar().setValue(
+            self.output.verticalScrollBar().maximum()
+        )
+class FileGridPanel(PanelFrame):
+    def __init__(self, title, subtitle, watch_dir):
+        super().__init__(title, subtitle)
+        self.watch_dir = Path(watch_dir)
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.container = QtWidgets.QWidget()
+        self.grid = QtWidgets.QGridLayout(self.container)
+        self.grid.setContentsMargins(18, 18, 18, 18)
+        self.grid.setSpacing(22)
+        self.scroll.setWidget(self.container)
+        self.addWidget(self.scroll, stretch=1)
+        self.known_files = set()
+        self.watcher = QtCore.QFileSystemWatcher(self)
+        self.watcher.addPath(str(self.watch_dir))
+        self.watcher.directoryChanged.connect(self.refresh_files)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.refresh_files)
+        self.timer.start(1000)
+        self.refresh_files()
+    def refresh_files(self):
+        files = sorted(
+            [p for p in self.watch_dir.iterdir() if p.is_file()],
+            key=lambda p: p.stat().st_mtime,
+        )
+        current = set(str(p) for p in files)
+        if current == self.known_files:
+            return
+        self.known_files = current
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        columns = 4
+        for idx, path in enumerate(files):
+            row = idx // columns
+            col = idx % columns
+            self.grid.addWidget(self.make_file_widget(path), row, col)
+        self.grid.setRowStretch((len(files) // columns) + 1, 1)
+    def make_file_widget(self, path: Path):
+        box = QtWidgets.QFrame()
+        box.setStyleSheet("""
+            QFrame {
+                background-color: transparent;
+                border-radius: 8px;
+            }
+            QFrame:hover {
+                background-color: #112334;
+            }
+        """)
+        layout = QtWidgets.QVBoxLayout(box)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+        icon = QtWidgets.QLabel()
+        pixmap = self.style().standardIcon(
+            QtWidgets.QStyle.SP_FileIcon
+        ).pixmap(52, 52)
+        icon.setPixmap(pixmap)
+        icon.setAlignment(QtCore.Qt.AlignCenter)
+        name = QtWidgets.QLabel(path.name)
+        name.setObjectName("fileName")
+        name.setAlignment(QtCore.Qt.AlignCenter)
+        name.setWordWrap(True)
+        layout.addWidget(icon)
+        layout.addWidget(name)
+        return box
+class JsonConfigPanel(PanelFrame):
+    def __init__(self, title, subtitle, json_path):
+        super().__init__(title, subtitle)
+        self.json_path = Path(json_path)
+        self.last_text = None
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Key", "Value"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.Stretch
+        )
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.table.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.addWidget(self.table, stretch=1)
+        self.watcher = QtCore.QFileSystemWatcher(self)
+        if self.json_path.exists():
+            self.watcher.addPath(str(self.json_path))
+        self.watcher.fileChanged.connect(self.load_json)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.load_json)
+        self.timer.start(1500)
+        self.load_json()
+    def load_json(self):
+        if not self.json_path.exists():
+            self.render_error(f"Missing JSON file: {self.json_path}")
+            return
+        if str(self.json_path) not in self.watcher.files():
+            self.watcher.addPath(str(self.json_path))
+        try:
+            text = self.json_path.read_text()
+            if text == self.last_text:
+                return
+            self.last_text = text
+            data = json.loads(text)
+            self.render_json(data)
+        except Exception as e:
+            self.render_error(str(e))
+    def render_error(self, message):
+        self.table.setRowCount(1)
+        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem("Error"))
+        self.table.setItem(0, 1, QtWidgets.QTableWidgetItem(message))
+    def render_json(self, data):
+        flat = self.flatten_json(data)
+        self.table.setRowCount(len(flat))
+        for row, (key, value) in enumerate(flat.items()):
+            key_item = QtWidgets.QTableWidgetItem(str(key))
+            value_item = QtWidgets.QTableWidgetItem(str(value))
+            key_item.setForeground(QtGui.QColor("#8db7df"))
+            value_item.setForeground(QtGui.QColor("#edf6ff"))
+            self.table.setItem(row, 0, key_item)
+            self.table.setItem(row, 1, value_item)
+        self.table.resizeRowsToContents()
+    def flatten_json(self, data, prefix=""):
+        result = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                new_key = f"{prefix}.{k}" if prefix else str(k)
+                result.update(self.flatten_json(v, new_key))
+        elif isinstance(data, list):
+            for i, v in enumerate(data):
+                new_key = f"{prefix}[{i}]"
+                result.update(self.flatten_json(v, new_key))
+        else:
+            result[prefix] = data
+        return result
+class SideLabelPanel(QtWidgets.QFrame):
+    def __init__(self, title, info_text):
+        super().__init__()
+        self.setObjectName("panelFrame")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 12, 12)
+        layout.setSpacing(20)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("sideTitle")
+        info_lbl = QtWidgets.QLabel(info_text)
+        info_lbl.setObjectName("sideInfo")
+        layout.addWidget(title_lbl)
+        layout.addWidget(info_lbl)
+        layout.addStretch(1)
+class HostRow(QtWidgets.QWidget):
+    def __init__(
+        self,
+        side_title,
+        side_info,
+        cli_title,
+        cli_subtitle,
+        cli_button_text,
+        cli_command,
+        file_title,
+        file_subtitle,
+        watch_dir,
+        remote_host=None,
+    ):
+        super().__init__()
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        side = SideLabelPanel(side_title, side_info)
+        cli = CliPanel(
+            cli_title,
+            cli_subtitle,
+            cli_button_text,
+            cli_command,
+            remote_host=remote_host,
+        )
+        files = FileGridPanel(
+            file_title,
+            file_subtitle,
+            watch_dir,
+        )
+        layout.addWidget(side, stretch=1)
+        layout.addWidget(cli, stretch=4)
+        layout.addWidget(files, stretch=4)
+class SiteDashboard(QtWidgets.QWidget):
+    def __init__(self, args):
+        super().__init__()
+        self.setWindowTitle("RF Site Control Dashboard")
+        self.resize(1500, 950)
+        self.setStyleSheet(APP_STYLE)
+        root = QtWidgets.QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
+        header = QtWidgets.QFrame()
+        header.setObjectName("headerBar")
+        header_layout = QtWidgets.QVBoxLayout(header)
+        header_layout.setContentsMargins(22, 18, 22, 18)
+        header_layout.setSpacing(6)
+        title = QtWidgets.QLabel("RF SITE CONTROL DASHBOARD")
+        title.setObjectName("appTitle")
+        subtitle = QtWidgets.QLabel(
+            "Local and remote CLI launchers, live file updates, and JSON site configuration"
+        )
+        subtitle.setObjectName("appSubtitle")
+        header_layout.addWidget(title)
+        header_layout.addWidget(subtitle)
+        root.addWidget(header)
+        main_grid = QtWidgets.QGridLayout()
+        main_grid.setSpacing(10)
+        root.addLayout(main_grid, stretch=1)
+        local_row = HostRow(
+            side_title="Desktop",
+            side_info="Text\nInfo",
+            cli_title="LIVE CLI OUTPUT 1",
+            cli_subtitle="Local host",
+            cli_button_text="Run Local Script",
+            cli_command=args.local_script,
+            file_title="LIVE FILE UPDATE 1",
+            file_subtitle=f"Local output directory: {args.local_watch_dir}",
+            watch_dir=args.local_watch_dir,
+            remote_host=None,
+        )
+        remote_row = HostRow(
+            side_title="Laptop",
+            side_info="Text\nInfo",
+            cli_title="LIVE CLI OUTPUT 2",
+            cli_subtitle=f"Remote host: {args.remote_host}",
+            cli_button_text="Run Remote Script",
+            cli_command=args.remote_script,
+            file_title="LIVE FILE UPDATE 2",
+            file_subtitle=f"Remote output directory: {args.remote_watch_dir}",
+            watch_dir=args.remote_watch_dir,
+            remote_host=args.remote_host,
+        )
+        site3 = JsonConfigPanel(
+            "SITE 3 CONFIGURATION",
+            args.site3_json,
+            args.site3_json,
+        )
+        site2 = JsonConfigPanel(
+            "SITE 2 CONFIGURATION",
+            args.site2_json,
+            args.site2_json,
+        )
+        main_grid.addWidget(local_row, 0, 0)
+        main_grid.addWidget(site3, 0, 1)
+        main_grid.addWidget(remote_row, 1, 0)
+        main_grid.addWidget(site2, 1, 1)
+        main_grid.setColumnStretch(0, 4)
+        main_grid.setColumnStretch(1, 2)
+        main_grid.setRowStretch(0, 1)
+        main_grid.setRowStretch(1, 1)
+def create_example_files(args):
+    Path(args.local_watch_dir).mkdir(parents=True, exist_ok=True)
+    Path(args.remote_watch_dir).mkdir(parents=True, exist_ok=True)
+    site2_path = Path(args.site2_json)
+    site3_path = Path(args.site3_json)
+    if not site2_path.exists():
+        site2_path.write_text(json.dumps({
+            "site_name": "Site 2",
+            "location": "South Valley",
+            "center_frequency_hz": 91500000,
+            "sample_rate_hz": 250000,
+            "gain_db": 25,
+            "antenna": "Yagi 8-element",
+            "rf_frontend": "E320",
+            "reference": "GPSDO",
+            "notes": "Backup site",
+            "enabled": True,
+        }, indent=2))
+    if not site3_path.exists():
+        site3_path.write_text(json.dumps({
+            "site_name": "Site 3",
+            "location": "North Ridge",
+            "center_frequency_hz": 102700000,
+            "sample_rate_hz": 250000,
+            "gain_db": 30,
+            "antenna": "Log Periodic",
+            "rf_frontend": "E320",
+            "reference": "GPSDO",
+            "notes": "Primary monitoring site",
+            "enabled": True,
+        }, indent=2))
+    for i in range(8):
+        p = Path(args.local_watch_dir) / f"sigmf_20250519_1021{i:02d}_{i:04d}.sigmf-data"
+        if not p.exists():
+            p.write_text("example local file\n")
+    for i in range(8):
+        p = Path(args.remote_watch_dir) / f"sigmf_20250519_1021{i:02d}_{i:04d}.sigmf-data"
+        if not p.exists():
+            p.write_text("example remote file\n")
+def main():
+    parser = argparse.ArgumentParser(
+        description="PyQt5 RF Site Control Dashboard"
+    )
+    parser.add_argument(
+        "--local-script",
+        default="./start_local.sh",
+        help="Local bash command or script path",
+    )
+    parser.add_argument(
+        "--remote-host",
+        default="user@192.168.1.100",
+        help="Remote SSH target, for example ubuntu@10.10.10.101",
+    )
+    parser.add_argument(
+        "--remote-script",
+        default="./start_remote.sh",
+        help="Remote bash command or script path",
+    )
+    parser.add_argument(
+        "--local-watch-dir",
+        default="./local_output",
+        help="Local directory to watch for new files",
+    )
+    parser.add_argument(
+        "--remote-watch-dir",
+        default="./remote_output",
+        help="Directory on local machine showing remote-created files",
+    )
+    parser.add_argument(
+        "--site2-json",
+        default="./site2_config.json",
+        help="Path to Site 2 JSON config file",
+    )
+    parser.add_argument(
+        "--site3-json",
+        default="./site3_config.json",
+        help="Path to Site 3 JSON config file",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Create example JSON files and example file icons",
+    )
+    args = parser.parse_args()
+    if args.demo:
+        create_example_files(args)
+    app = QtWidgets.QApplication(sys.argv)
+    app.setFont(QtGui.QFont("Segoe UI", 10))
+    window = SiteDashboard(args)
+    window.show()
+    sys.exit(app.exec_())
+if __name__ == "__main__":
+    main()
+
+Run demo mode first:
+
+python3 rf_site_dashboard.py --demo
+
+Then run with your real scripts:
+
+python3 rf_site_dashboard.py \
+  --local-script "/home/user/scripts/start_local.sh" \
+  --remote-host "ubuntu@10.10.10.101" \
+  --remote-script "/home/ubuntu/scripts/start_remote.sh" \
+  --local-watch-dir "/home/user/local_output" \
+  --remote-watch-dir "/home/user/remote_output" \
+  --site2-json "/home/user/config/site2.json" \
+  --site3-json "/home/user/config/site3.json"
