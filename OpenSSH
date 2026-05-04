@@ -1,0 +1,116 @@
+On the online Ubuntu 22.04.5 VM
+
+1. Plug in the thumb drive and find it
+
+lsblk
+
+Assume it shows as /dev/sdb1.
+
+Mount it:
+
+sudo mkdir -p /mnt/usb
+sudo mount /dev/sdb1 /mnt/usb
+
+2. Make a folder for Ubuntu 24.04 OpenSSH packages
+
+mkdir -p ~/offline-openssh-24.04
+cd ~/offline-openssh-24.04
+
+3. Create a clean Ubuntu 24.04 apt download environment
+
+mkdir -p apt-noble/{etc/apt/sources.list.d,etc/apt/trusted.gpg.d,var/lib/apt/lists/partial,var/cache/apt/archives/partial,var/lib/dpkg}
+touch apt-noble/var/lib/dpkg/status
+cp /usr/share/keyrings/ubuntu-archive-keyring.gpg apt-noble/etc/apt/trusted.gpg.d/
+
+Create the Ubuntu 24.04 repo list:
+
+cat > apt-noble/etc/apt/sources.list <<'EOF'
+deb http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
+deb http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
+EOF
+
+4. Download openssh-server and all needed dependencies for Ubuntu 24.04
+
+sudo apt-get \
+  -o Dir::Etc::sourcelist="$PWD/apt-noble/etc/apt/sources.list" \
+  -o Dir::Etc::sourceparts="$PWD/apt-noble/etc/apt/sources.list.d" \
+  -o Dir::State="$PWD/apt-noble/var/lib/apt" \
+  -o Dir::Cache="$PWD/apt-noble/var/cache/apt" \
+  -o Dir::State::status="$PWD/apt-noble/var/lib/dpkg/status" \
+  update
+
+Then download:
+
+sudo apt-get \
+  -o Dir::Etc::sourcelist="$PWD/apt-noble/etc/apt/sources.list" \
+  -o Dir::Etc::sourceparts="$PWD/apt-noble/etc/apt/sources.list.d" \
+  -o Dir::State="$PWD/apt-noble/var/lib/apt" \
+  -o Dir::Cache="$PWD/apt-noble/var/cache/apt" \
+  -o Dir::State::status="$PWD/apt-noble/var/lib/dpkg/status" \
+  --download-only install -y openssh-server
+
+5. Copy the .deb files to the thumb drive
+
+mkdir -p /mnt/usb/openssh-server-ubuntu-24.04
+cp apt-noble/var/cache/apt/archives/*.deb /mnt/usb/openssh-server-ubuntu-24.04/
+sync
+
+Unmount:
+
+sudo umount /mnt/usb
+
+⸻
+
+On the offline Ubuntu 24.04 VM on ESXi
+
+1. Attach the USB drive to the VM
+
+In ESXi Host Client:
+
+VM → Edit settings → Add USB device
+
+Then boot/log into the Ubuntu 24.04 VM.
+
+2. Mount the USB drive
+
+lsblk
+
+Assume it is /dev/sdb1.
+
+sudo mkdir -p /mnt/usb
+sudo mount /dev/sdb1 /mnt/usb
+
+3. Copy packages locally
+
+mkdir -p ~/openssh-offline
+cp /mnt/usb/openssh-server-ubuntu-24.04/*.deb ~/openssh-offline/
+cd ~/openssh-offline
+
+4. Install the packages
+
+sudo dpkg -i ./*.deb
+
+If it complains about order/dependencies, run it once more:
+
+sudo dpkg -i ./*.deb
+
+5. Enable and start SSH
+
+sudo systemctl enable ssh
+sudo systemctl start ssh
+sudo systemctl status ssh
+
+6. Check the VM IP
+
+ip a
+
+Then from another machine on the same network:
+
+ssh username@VM_IP_ADDRESS
+
+Example:
+
+ssh kevin@10.10.10.101
+
+Important: do not use Ubuntu 22.04 .deb packages on the Ubuntu 24.04 VM. Use the noble/24.04 packages as shown above.
