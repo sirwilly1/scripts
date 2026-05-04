@@ -1,0 +1,156 @@
+Yes. Replace your current FileGridPanel class with this tabbed version, then update the CLI args and HostRow calls below.
+
+class FileGridPanel(PanelFrame):
+    def __init__(self, title, subtitle, watch_dirs):
+        super().__init__(title, subtitle)
+        self.tabs = QtWidgets.QTabWidget()
+        self.addWidget(self.tabs, stretch=1)
+        self.grids = []
+        for label, folder in watch_dirs:
+            page = SingleFileGrid(folder)
+            self.tabs.addTab(page, label)
+            self.grids.append(page)
+class SingleFileGrid(QtWidgets.QWidget):
+    def __init__(self, watch_dir):
+        super().__init__()
+        self.watch_dir = Path(watch_dir)
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+        self.known_files = set()
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.container = QtWidgets.QWidget()
+        self.grid = QtWidgets.QGridLayout(self.container)
+        self.grid.setContentsMargins(18, 18, 18, 18)
+        self.grid.setSpacing(22)
+        self.scroll.setWidget(self.container)
+        layout.addWidget(self.scroll)
+        self.watcher = QtCore.QFileSystemWatcher(self)
+        self.watcher.addPath(str(self.watch_dir))
+        self.watcher.directoryChanged.connect(self.refresh_files)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.refresh_files)
+        self.timer.start(1000)
+        self.refresh_files()
+    def refresh_files(self):
+        files = sorted(
+            [p for p in self.watch_dir.iterdir() if p.is_file()],
+            key=lambda p: p.stat().st_mtime,
+        )
+        current = set(str(p) for p in files)
+        if current == self.known_files:
+            return
+        self.known_files = current
+        while self.grid.count():
+            item = self.grid.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        columns = 4
+        for idx, path in enumerate(files):
+            row = idx // columns
+            col = idx % columns
+            self.grid.addWidget(self.make_file_widget(path), row, col)
+        self.grid.setRowStretch((len(files) // columns) + 1, 1)
+    def make_file_widget(self, path: Path):
+        box = QtWidgets.QFrame()
+        box.setStyleSheet("""
+            QFrame {
+                background-color: transparent;
+                border-radius: 8px;
+            }
+            QFrame:hover {
+                background-color: #112334;
+            }
+        """)
+        layout = QtWidgets.QVBoxLayout(box)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(6)
+        icon = QtWidgets.QLabel()
+        pixmap = self.style().standardIcon(
+            QtWidgets.QStyle.SP_FileIcon
+        ).pixmap(52, 52)
+        icon.setPixmap(pixmap)
+        icon.setAlignment(QtCore.Qt.AlignCenter)
+        name = QtWidgets.QLabel(path.name)
+        name.setObjectName("fileName")
+        name.setAlignment(QtCore.Qt.AlignCenter)
+        name.setWordWrap(True)
+        layout.addWidget(icon)
+        layout.addWidget(name)
+        return box
+
+Add this to APP_STYLE:
+
+QTabWidget::pane {
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    background-color: #050b12;
+}
+QTabBar::tab {
+    background-color: #0c1724;
+    color: #8db7df;
+    border: 1px solid #20384c;
+    padding: 7px 14px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+QTabBar::tab:selected {
+    background-color: #112334;
+    color: #edf6ff;
+    border-color: #3a7aa8;
+}
+
+Change HostRow parameter from:
+
+watch_dir,
+
+to:
+
+watch_dirs,
+
+Then change this:
+
+files = FileGridPanel(
+    file_title,
+    file_subtitle,
+    watch_dir,
+)
+
+to:
+
+files = FileGridPanel(
+    file_title,
+    file_subtitle,
+    watch_dirs,
+)
+
+Then update the local row:
+
+watch_dirs=[
+    ("SigMF Data", args.local_watch_dir_1),
+    ("SigMF Meta", args.local_watch_dir_2),
+    ("Logs", args.local_watch_dir_3),
+],
+
+And remote row:
+
+watch_dirs=[
+    ("SigMF Data", args.remote_watch_dir_1),
+    ("SigMF Meta", args.remote_watch_dir_2),
+    ("Logs", args.remote_watch_dir_3),
+],
+
+Add these argparse options:
+
+parser.add_argument("--local-watch-dir-1", default="./local_output/data")
+parser.add_argument("--local-watch-dir-2", default="./local_output/meta")
+parser.add_argument("--local-watch-dir-3", default="./local_output/logs")
+parser.add_argument("--remote-watch-dir-1", default="./remote_output/data")
+parser.add_argument("--remote-watch-dir-2", default="./remote_output/meta")
+parser.add_argument("--remote-watch-dir-3", default="./remote_output/logs")
+
+Then run:
+
+python3 rf_site_dashboard.py --demo
