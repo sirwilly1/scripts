@@ -1,0 +1,96 @@
+Yes. Add a second button to the left sidebar by updating SideLabelPanel.
+
+Replace your current SideLabelPanel with this:
+
+class SideLabelPanel(QtWidgets.QFrame):
+    def __init__(self, title, info_text, image_path=None, button_text=None, button_command=None):
+        super().__init__()
+        self.setObjectName("panelFrame")
+        self.process = None
+        self.button_command = button_command
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 12, 12)
+        layout.setSpacing(14)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("sideTitle")
+        layout.addWidget(title_lbl)
+        if image_path and os.path.exists(image_path):
+            img_label = QtWidgets.QLabel()
+            img_label.setStyleSheet("background-color: transparent; border: none;")
+            pixmap = QtGui.QPixmap(image_path).scaled(
+                120, 120,
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation
+            )
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+            layout.addWidget(img_label)
+        info_lbl = QtWidgets.QLabel(info_text)
+        info_lbl.setObjectName("sideInfo")
+        layout.addWidget(info_lbl)
+        if button_text and button_command:
+            self.launch_button = QtWidgets.QPushButton(button_text)
+            self.launch_button.clicked.connect(self.run_button_command)
+            layout.addWidget(self.launch_button)
+        layout.addStretch(1)
+    def run_button_command(self):
+        if self.process and self.process.state() != QtCore.QProcess.NotRunning:
+            return
+        self.process = QtCore.QProcess(self)
+        self.process.start("bash", ["-lc", self.button_command])
+
+Then update HostRow.
+
+Change the HostRow.__init__ signature to include:
+
+side_button_text=None,
+side_button_command=None,
+
+Then change your SideLabelPanel creation to:
+
+side = SideLabelPanel(
+    side_title,
+    side_info,
+    image_path=image_path,
+    button_text=side_button_text,
+    button_command=side_button_command,
+)
+
+Then in your local_row, add:
+
+side_button_text="Launch Waterfall GUI",
+side_button_command="./launch_waterfall_gui.sh",
+
+Example:
+
+local_row = HostRow(
+    side_title="Desktop",
+    side_info=local_info,
+    image_path="./images/desktop.png",
+    side_button_text="Launch Waterfall GUI",
+    side_button_command="./launch_waterfall_gui.sh",
+    cli_title="LIVE CLI OUTPUT 1",
+    cli_subtitle="Local host",
+    cli_button_text="Run Local Script",
+    cli_command=args.local_script,
+    file_title="LIVE FILE UPDATE 1",
+    file_subtitle="Local output directories",
+    watch_dirs=[
+        ("Data", args.local_watch_dir_1),
+        ("Meta", args.local_watch_dir_2),
+        ("Logs", args.local_watch_dir_3),
+    ],
+    remote_host=None,
+)
+
+Add an argparse option if you want it configurable:
+
+parser.add_argument(
+    "--waterfall-script",
+    default="./launch_waterfall_gui.sh",
+    help="Local shell script that launches the waterfall GUI",
+)
+
+Then use:
+
+side_button_command=args.waterfall_script,
