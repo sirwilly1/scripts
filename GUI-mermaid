@@ -1,0 +1,148 @@
+Yes. Replace your current JsonConfigPanel class with this version. It adds two tabs:
+
+Fields | Mermaid Diagram
+
+The Mermaid tab auto-generates a flowchart from the JSON structure.
+
+class JsonConfigPanel(PanelFrame):
+    def __init__(self, title, subtitle, json_path):
+        super().__init__(title, subtitle)
+        self.json_path = Path(json_path)
+        self.last_text = None
+        self.tabs = QtWidgets.QTabWidget()
+        self.addWidget(self.tabs, stretch=1)
+        # Tab 1: fields table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Key", "Value"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.table.setFocusPolicy(QtCore.Qt.NoFocus)
+        # Tab 2: Mermaid text
+        self.mermaid_box = QtWidgets.QTextEdit()
+        self.mermaid_box.setReadOnly(True)
+        self.mermaid_box.setFont(QtGui.QFont("DejaVu Sans Mono", 9))
+        self.tabs.addTab(self.table, "Fields")
+        self.tabs.addTab(self.mermaid_box, "Mermaid Diagram")
+        self.watcher = QtCore.QFileSystemWatcher(self)
+        if self.json_path.exists():
+            self.watcher.addPath(str(self.json_path))
+        self.watcher.fileChanged.connect(self.load_json)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.load_json)
+        self.timer.start(1500)
+        self.load_json()
+    def load_json(self):
+        if not self.json_path.exists():
+            self.render_error(f"Missing JSON file: {self.json_path}")
+            return
+        if str(self.json_path) not in self.watcher.files():
+            self.watcher.addPath(str(self.json_path))
+        try:
+            text = self.json_path.read_text()
+            if text == self.last_text:
+                return
+            self.last_text = text
+            data = json.loads(text)
+            self.render_json(data)
+            self.render_mermaid(data)
+        except Exception as e:
+            self.render_error(str(e))
+    def render_error(self, message):
+        self.table.setRowCount(1)
+        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem("Error"))
+        self.table.setItem(0, 1, QtWidgets.QTableWidgetItem(message))
+        self.mermaid_box.setPlainText(f"Error loading JSON:\n{message}")
+    def render_json(self, data):
+        flat = self.flatten_json(data)
+        self.table.setRowCount(len(flat))
+        for row, (key, value) in enumerate(flat.items()):
+            key_item = QtWidgets.QTableWidgetItem(str(key))
+            value_item = QtWidgets.QTableWidgetItem(str(value))
+            key_item.setForeground(QtGui.QColor("#8db7df"))
+            value_item.setForeground(QtGui.QColor("#edf6ff"))
+            self.table.setItem(row, 0, key_item)
+            self.table.setItem(row, 1, value_item)
+        self.table.resizeRowsToContents()
+    def render_mermaid(self, data):
+        mermaid = self.json_to_mermaid(data)
+        self.mermaid_box.setPlainText(mermaid)
+    def flatten_json(self, data, prefix=""):
+        result = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                new_key = f"{prefix}.{k}" if prefix else str(k)
+                result.update(self.flatten_json(v, new_key))
+        elif isinstance(data, list):
+            for i, v in enumerate(data):
+                new_key = f"{prefix}[{i}]"
+                result.update(self.flatten_json(v, new_key))
+        else:
+            result[prefix] = data
+        return result
+    def json_to_mermaid(self, data):
+        lines = ["flowchart TD"]
+        counter = {"value": 0}
+        def new_node(label):
+            counter["value"] += 1
+            node_id = f"N{counter['value']}"
+            safe_label = str(label).replace('"', "'")
+            lines.append(f'    {node_id}["{safe_label}"]')
+            return node_id
+        root = new_node(self.json_path.stem)
+        def walk(parent_id, key, value):
+            if isinstance(value, dict):
+                node = new_node(key)
+                lines.append(f"    {parent_id} --> {node}")
+                for child_key, child_value in value.items():
+                    walk(node, child_key, child_value)
+            elif isinstance(value, list):
+                node = new_node(f"{key}[]")
+                lines.append(f"    {parent_id} --> {node}")
+                for i, item in enumerate(value):
+                    walk(node, f"[{i}]", item)
+            else:
+                leaf = new_node(f"{key}: {value}")
+                lines.append(f"    {parent_id} --> {leaf}")
+        if isinstance(data, dict):
+            for key, value in data.items():
+                walk(root, key, value)
+        else:
+            walk(root, "value", data)
+        return "\n".join(lines)
+
+Also add this to APP_STYLE for the tabs:
+
+QTabWidget::pane {
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    background-color: #050b12;
+}
+QTabBar::tab {
+    background-color: #0c1724;
+    color: #8db7df;
+    border: 1px solid #20384c;
+    padding: 7px 14px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+QTabBar::tab:selected {
+    background-color: #112334;
+    color: #edf6ff;
+    border-color: #3a7aa8;
+}
+
+This will show Mermaid code like:
+
+flowchart TD
+    N1["site3_config"]
+    N2["site_name: Site 3"]
+    N1 --> N2
+    N3["location: North Ridge"]
+    N1 --> N3
+
+You can paste that Mermaid text into Markdown, GitHub, Mermaid Live Editor, or docs that support Mermaid.
