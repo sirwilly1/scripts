@@ -1,0 +1,166 @@
+Start by replacing your entire JsonConfigPanel class with this version. It keeps your current Fields table and adds a second tab called Flow Diagram using QGraphicsView.
+
+class JsonFlowView(QtWidgets.QGraphicsView):
+    def __init__(self):
+        super().__init__()
+        self.scene = QtWidgets.QGraphicsScene(self)
+        self.setScene(self.scene)
+        self.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.setBackgroundBrush(QtGui.QColor("#050b12"))
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+    def render_json(self, data, title="config"):
+        self.scene.clear()
+        root = self.add_node(title, 40, 40)
+        self._walk(data, root, 300, 40)
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-40, -40, 80, 80))
+    def _walk(self, data, parent_node, x, y):
+        y_step = 70
+        x_step = 250
+        if isinstance(data, dict):
+            for key, value in data.items():
+                label = key if isinstance(value, (dict, list)) else f"{key}: {value}"
+                child = self.add_node(label, x, y)
+                self.add_arrow(parent_node, child)
+                if isinstance(value, (dict, list)):
+                    y = self._walk(value, child, x + x_step, y)
+                y += y_step
+        elif isinstance(data, list):
+            for i, value in enumerate(data):
+                label = f"[{i}]" if isinstance(value, (dict, list)) else f"[{i}]: {value}"
+                child = self.add_node(label, x, y)
+                self.add_arrow(parent_node, child)
+                if isinstance(value, (dict, list)):
+                    y = self._walk(value, child, x + x_step, y)
+                y += y_step
+        return y
+    def add_node(self, text, x, y):
+        width = 210
+        height = 44
+        box = self.scene.addRoundedRect(
+            QtCore.QRectF(x, y, width, height),
+            8,
+            8,
+            QtGui.QPen(QtGui.QColor("#3a7aa8"), 1),
+            QtGui.QBrush(QtGui.QColor("#112334"))
+        )
+        label = self.scene.addText(str(text))
+        label.setDefaultTextColor(QtGui.QColor("#edf6ff"))
+        text_rect = label.boundingRect()
+        label.setPos(
+            x + (width - text_rect.width()) / 2,
+            y + (height - text_rect.height()) / 2
+        )
+        return box
+    def add_arrow(self, src, dst):
+        s = src.sceneBoundingRect().center()
+        d = dst.sceneBoundingRect().center()
+        line = QtCore.QLineF(s, d)
+        self.scene.addLine(
+            line,
+            QtGui.QPen(QtGui.QColor("#7893a8"), 1)
+        )
+class JsonConfigPanel(PanelFrame):
+    def __init__(self, title, subtitle, json_path):
+        super().__init__(title, subtitle)
+        self.json_path = Path(json_path)
+        self.last_text = None
+        self.tabs = QtWidgets.QTabWidget()
+        self.addWidget(self.tabs, stretch=1)
+        # Tab 1: JSON fields table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Key", "Value"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.table.setFocusPolicy(QtCore.Qt.NoFocus)
+        # Tab 2: rendered PyQt flow diagram
+        self.flow_view = JsonFlowView()
+        self.tabs.addTab(self.table, "Fields")
+        self.tabs.addTab(self.flow_view, "Flow Diagram")
+        self.watcher = QtCore.QFileSystemWatcher(self)
+        if self.json_path.exists():
+            self.watcher.addPath(str(self.json_path))
+        self.watcher.fileChanged.connect(self.load_json)
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.load_json)
+        self.timer.start(1500)
+        self.load_json()
+    def load_json(self):
+        if not self.json_path.exists():
+            self.render_error(f"Missing JSON file: {self.json_path}")
+            return
+        if str(self.json_path) not in self.watcher.files():
+            self.watcher.addPath(str(self.json_path))
+        try:
+            text = self.json_path.read_text()
+            if text == self.last_text:
+                return
+            self.last_text = text
+            data = json.loads(text)
+            self.render_json(data)
+            self.flow_view.render_json(data, self.json_path.stem)
+        except Exception as e:
+            self.render_error(str(e))
+    def render_error(self, message):
+        self.table.setRowCount(1)
+        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem("Error"))
+        self.table.setItem(0, 1, QtWidgets.QTableWidgetItem(message))
+        self.flow_view.scene.clear()
+        self.flow_view.add_node(f"Error: {message}", 40, 40)
+    def render_json(self, data):
+        flat = self.flatten_json(data)
+        self.table.setRowCount(len(flat))
+        for row, (key, value) in enumerate(flat.items()):
+            key_item = QtWidgets.QTableWidgetItem(str(key))
+            value_item = QtWidgets.QTableWidgetItem(str(value))
+            key_item.setForeground(QtGui.QColor("#8db7df"))
+            value_item.setForeground(QtGui.QColor("#edf6ff"))
+            self.table.setItem(row, 0, key_item)
+            self.table.setItem(row, 1, value_item)
+        self.table.resizeRowsToContents()
+    def flatten_json(self, data, prefix=""):
+        result = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                new_key = f"{prefix}.{k}" if prefix else str(k)
+                result.update(self.flatten_json(v, new_key))
+        elif isinstance(data, list):
+            for i, v in enumerate(data):
+                new_key = f"{prefix}[{i}]"
+                result.update(self.flatten_json(v, new_key))
+        else:
+            result[prefix] = data
+        return result
+
+Also add this to your APP_STYLE so the tabs match your theme:
+
+QTabWidget::pane {
+    border: 1px solid #20384c;
+    border-radius: 8px;
+    background-color: #050b12;
+}
+QTabBar::tab {
+    background-color: #0c1724;
+    color: #8db7df;
+    border: 1px solid #20384c;
+    padding: 7px 14px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+QTabBar::tab:selected {
+    background-color: #112334;
+    color: #edf6ff;
+    border-color: #3a7aa8;
+}
+QGraphicsView {
+    border: 1px solid #20384c;
+    border-radius: 8px;
+}
+
+Now each site config box will have:
+
+Fields | Flow Diagram
