@@ -1,0 +1,72 @@
+Correct — the current Python uses plain ssh, so it does not handle password prompts or your “Do you agree?” prompt.
+
+Best fix: keep your Expect login wrapper and have the PyQt GUI launch that wrapper.
+
+For the remote monitor button, make a script like this:
+
+#!/usr/bin/expect -f
+set timeout 60
+set user "YOUR_USER"
+set host "YOUR_HOST"
+set pass "YOUR_PASSWORD"
+set remote_script "/path/on/remote/start_remote.sh"
+spawn ssh -tt -o StrictHostKeyChecking=accept-new $user@$host "bash -lc '$remote_script'"
+expect {
+    -re ".+" {
+        set buf $expect_out(buffer)
+        if {[string match -nocase "*password:*" $buf]} {
+            send -- "$pass\r"
+        }
+        if {[string match -nocase "*Do you agree*" $buf]} {
+            send -- "y\r"
+        }
+        exp_continue
+    }
+    timeout { exit 1 }
+    eof { exit }
+}
+
+Save it as:
+
+remote_monitor_expect.exp
+
+Then:
+
+chmod +x remote_monitor_expect.exp
+
+Now in your PyQt command line, set the remote script to the local Expect wrapper, and make the GUI run it locally instead of wrapping it in ssh.
+
+That means change the remote HostRow from:
+
+remote_host=args.remote_host,
+
+to:
+
+remote_host=None,
+
+for the CLI panel only:
+
+remote_row = HostRow(
+    side_title="Laptop",
+    side_info=remote_info,
+    image_path=args.laptop_image,
+    cli_title="LIVE CLI OUTPUT 2",
+    cli_subtitle=f"Remote host: {args.remote_host}",
+    cli_button_text="Run Remote Script",
+    cli_command=args.remote_script,
+    file_title="LIVE FILE UPDATE 2",
+    file_subtitle="Remote output directories",
+    watch_dirs=[
+        ("Data", args.remote_watch_dir_1),
+        ("Meta", args.remote_watch_dir_2),
+        ("Logs", args.remote_watch_dir_3),
+    ],
+    remote_host=None,
+)
+
+Then run the dashboard like:
+
+python3 rf_site_dashboard.py \
+  --remote-script "/home/you/scripts/remote_monitor_expect.exp"
+
+Important: the file update boxes only watch local folders. So for remote files, your remote script needs to copy files back to local folders, or you need a separate scp/rsync wrapper that pulls them down.
