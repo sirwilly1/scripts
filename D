@@ -1,0 +1,51 @@
+That is likely because your QProcess is not running the command with a real terminal/TTY, or the script is buffering output.
+
+Use this version of CliPanel.run_command() so the command runs through script, which forces terminal-style output:
+
+def run_command(self):
+    if self.process and self.process.state() != QtCore.QProcess.NotRunning:
+        self.append_line("[already running]")
+        return
+    self.process = QtCore.QProcess(self)
+    if self.remote_host:
+        program = "ssh"
+        remote_cmd = f"bash -lc {shlex.quote(self.command)}"
+        args = ["-tt", self.remote_host, remote_cmd]
+        shown_cmd = f"ssh -tt {self.remote_host} {remote_cmd}"
+    else:
+        program = "script"
+        args = [
+            "-q",
+            "-f",
+            "-c",
+            self.command,
+            "/dev/null",
+        ]
+        shown_cmd = self.command
+    self.append_line(f"$ {shown_cmd}\n")
+    self.process.readyReadStandardOutput.connect(self.read_stdout)
+    self.process.readyReadStandardError.connect(self.read_stderr)
+    self.process.finished.connect(self.process_finished)
+    self.process.start(program, args)
+
+Also change your local/remote scripts so they flush output immediately:
+
+#!/bin/bash
+set -u
+stdbuf -oL -eL ./your_actual_command
+
+For Python scripts launched by bash, use:
+
+python3 -u your_script.py
+
+For your remote Expect wrapper, add logging to stdout:
+
+log_user 1
+
+near the top:
+
+#!/usr/bin/expect -f
+log_user 1
+set timeout 60
+
+Most common cause: the terminal shows output because it has a TTY, but PyQt QProcess captures pipes, so some commands change behavior or buffer their output. script -q -f -c ... /dev/null usually fixes that.
