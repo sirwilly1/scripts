@@ -1,0 +1,154 @@
+Yes. The clean way is:
+
+* Add a small image/plot area under the Launch Waterfall GUI button.
+* When you click the button, start a timer that updates a fake/preview waterfall.
+* Later, you can connect it to real IQ data.
+
+Add this import:
+
+import random
+
+Replace your SideLabelPanel class with this version:
+
+class MiniWaterfall(QtWidgets.QLabel):
+    def __init__(self, width=150, height=90):
+        super().__init__()
+        self.w = width
+        self.h = height
+        self.setFixedSize(self.w, self.h)
+        self.setStyleSheet("""
+            QLabel {
+                background-color: #02070d;
+                border: 1px solid #3a7aa8;
+                border-radius: 8px;
+            }
+        """)
+        self.image = QtGui.QImage(
+            self.w,
+            self.h,
+            QtGui.QImage.Format_RGB32
+        )
+        self.image.fill(QtGui.QColor("#02070d"))
+    def add_line(self):
+        # scroll image down
+        self.image = self.image.copy(0, 0, self.w, self.h)
+        painter = QtGui.QPainter(self.image)
+        painter.drawImage(0, 1, self.image)
+        # draw newest spectrum line at top
+        for x in range(self.w):
+            noise = random.randint(0, 50)
+            # fake center signal
+            center = self.w // 2
+            signal = max(0, 180 - abs(x - center) * 8)
+            intensity = min(255, noise + signal)
+            color = QtGui.QColor(
+                0,
+                int(intensity * 0.8),
+                intensity
+            )
+            painter.setPen(color)
+            painter.drawPoint(x, 0)
+        painter.end()
+        self.setPixmap(QtGui.QPixmap.fromImage(self.image))
+class SideLabelPanel(QtWidgets.QFrame):
+    def __init__(
+        self,
+        title,
+        info_text,
+        image_path=None,
+        button_text=None,
+        button_command=None,
+        show_mini_waterfall=False,
+    ):
+        super().__init__()
+        self.setObjectName("panelFrame")
+        self.process = None
+        self.button_command = button_command
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 12, 12)
+        layout.setSpacing(14)
+        title_lbl = QtWidgets.QLabel(title)
+        title_lbl.setObjectName("sideTitle")
+        layout.addWidget(title_lbl)
+        if image_path and os.path.exists(image_path):
+            img_label = QtWidgets.QLabel()
+            img_label.setStyleSheet("background-color: transparent; border: none;")
+            img_label.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+            pixmap = QtGui.QPixmap(image_path)
+            pixmap = pixmap.scaled(
+                120,
+                120,
+                QtCore.Qt.KeepAspectRatio,
+                QtCore.Qt.SmoothTransformation,
+            )
+            img_label.setPixmap(pixmap)
+            img_label.setAlignment(QtCore.Qt.AlignCenter)
+            layout.addWidget(img_label)
+        info_lbl = QtWidgets.QLabel(info_text)
+        info_lbl.setObjectName("sideInfo")
+        layout.addWidget(info_lbl)
+        if button_text and button_command:
+            self.launch_button = QtWidgets.QPushButton(button_text)
+            self.launch_button.clicked.connect(self.run_button_command)
+            layout.addWidget(self.launch_button)
+        self.mini_waterfall = None
+        self.waterfall_timer = None
+        if show_mini_waterfall:
+            self.mini_waterfall = MiniWaterfall(width=150, height=90)
+            layout.addWidget(self.mini_waterfall)
+            self.waterfall_timer = QtCore.QTimer(self)
+            self.waterfall_timer.timeout.connect(self.mini_waterfall.add_line)
+        layout.addStretch(1)
+    def run_button_command(self):
+        if self.process and self.process.state() != QtCore.QProcess.NotRunning:
+            return
+        self.process = QtCore.QProcess(self)
+        self.process.start("bash", ["-lc", self.button_command])
+        if self.waterfall_timer:
+            self.waterfall_timer.start(60)
+
+Then update HostRow.
+
+Add this argument:
+
+show_mini_waterfall=False,
+
+and pass it into SideLabelPanel:
+
+side = SideLabelPanel(
+    side_title,
+    side_info,
+    image_path=image_path,
+    button_text=side_button_text,
+    button_command=side_button_command,
+    show_mini_waterfall=show_mini_waterfall,
+)
+
+Then in your local_row, add:
+
+show_mini_waterfall=True,
+
+Example:
+
+local_row = HostRow(
+    side_title="Desktop",
+    side_info=local_info,
+    image_path=args.desktop_image,
+    side_button_text="Launch Waterfall GUI",
+    side_button_command=args.waterfall_script,
+    show_mini_waterfall=True,
+    cli_title="LIVE CLI OUTPUT 1",
+    cli_subtitle="Local host",
+    cli_button_text="Run Local Script",
+    cli_command=args.local_script,
+    file_title="LIVE FILE UPDATE 1",
+    file_subtitle="Local output directories",
+    watch_dirs=[
+        ("Data", args.local_watch_dir_1),
+        ("Meta", args.local_watch_dir_2),
+        ("Logs", args.local_watch_dir_3),
+    ],
+    remote_host=None,
+)
+
+This gives you a small live waterfall preview under the button as soon as the waterfall script launches.
