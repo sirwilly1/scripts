@@ -1,0 +1,119 @@
+Good — this debug output is actually very helpful.
+
+What it tells us
+
+expect: timed out
+
+👉 expect never saw:
+
+* password:
+* Do you agree
+
+So the problem is not your send commands
+It’s that your patterns never matched anything at all
+
+⸻
+
+Why this is happening (very likely)
+
+That system is probably doing one of these:
+
+1. Using a custom SSH wrapper / PAM module
+2. Printing output in a way that doesn’t include a newline
+3. Writing directly to /dev/tty instead of stdout
+4. Using ANSI formatting / control characters
+
+👉 Result: expect doesn’t “see” the text the same way you do
+
+⸻
+
+Fix: match EVERYTHING and inspect it
+
+Replace your script with this:
+
+#!/usr/bin/expect -f
+set timeout 120
+exp_internal 1
+
+set pass "YOUR_PASSWORD"
+spawn ssh -tt -o StrictHostKeyChecking=accept-new $user@$host
+# Print everything that comes in
+log_user 1
+expect {
+    -re ".*" {
+        puts "MATCHED: $expect_out(buffer)"
+        if {[string match -nocase "*password*" $expect_out(buffer)]} {
+            send -- "$pass\r"
+        }
+        if {[string match -nocase "*agree*" $expect_out(buffer)]} {
+            send -- "y\r"
+        }
+        exp_continue
+    }
+    timeout {
+        puts "TIMEOUT - nothing matched"
+        exit 1
+    }
+}
+interact
+
+⸻
+
+Why this works
+
+Instead of trying to guess exact regex:
+
+-re "password:"
+
+We do:
+
+-re ".*"
+
+Which means:
+👉 “capture literally everything”
+
+Then we manually check:
+
+if {[string match -nocase "*password*"]}
+
+This bypasses:
+
+* weird spacing
+* hidden characters
+* formatting issues
+
+⸻
+
+What I need from you next
+
+Run it and show me:
+
+👉 The MATCHED: output lines
+
+That will reveal exactly what the remote system is actually sending, including hidden junk.
+
+⸻
+
+Important observation
+
+Your earlier debug:
+
+parent: now unsynchronized from child
+
+This strongly suggests:
+
+👉 The remote system is doing non-standard terminal handling
+
+Which confirms:
+
+* simple regex won’t work reliably
+* we need this “catch-all + inspect” approach
+
+⸻
+
+Bottom line
+
+You’re very close — this isn’t a logic issue anymore
+It’s a terminal I/O behavior issue
+
+Once we see the raw buffer, I can give you a bulletproof final script tailored to that system.
