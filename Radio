@@ -1,0 +1,185 @@
+
+
+RF Site Control Dashboard
+
+Install
+
+Install PyQt5:
+
+sudo apt install python3-pyqt5
+pip install PyQt5
+
+⸻
+
+Project Setup
+
+Example folder layout:
+
+project/
+├── rf_site_dashboard.py
+├── launch_waterfall_gui.sh
+├── remote_monitor_expect.exp
+├── site2_config.json
+├── site3_config.json
+├── images/
+│   ├── desktop.png
+│   └── laptop_transparent.png
+├── local_output/
+│   ├── data/
+│   ├── meta/
+│   └── logs/
+└── remote_output/
+    ├── data/
+    ├── meta/
+    └── logs/
+
+Create the folders if they do not exist:
+
+mkdir -p local_output/data
+mkdir -p local_output/meta
+mkdir -p local_output/logs
+mkdir -p remote_output/data
+mkdir -p remote_output/meta
+mkdir -p remote_output/logs
+
+⸻
+
+Running the Dashboard
+
+Basic:
+
+python3 rf_site_dashboard.py
+
+Demo mode:
+
+python3 rf_site_dashboard.py --demo
+
+⸻
+
+Waterfall GUI Button
+
+The Desktop panel contains a:
+
+Launch Waterfall GUI
+
+button.
+
+Set the script path with:
+
+python3 rf_site_dashboard.py \
+  --waterfall-script "/home/user/E320_scripts/launch_waterfall_gui.sh"
+
+Example launch_waterfall_gui.sh:
+
+#!/bin/bash
+set -u
+cd /home/user/E320_scripts || exit 1
+script -q -f -c "stdbuf -oL -eL python3 waterfall_gui.py" /dev/null
+
+Make executable:
+
+chmod +x launch_waterfall_gui.sh
+
+⸻
+
+Remote Monitoring
+
+The remote monitor button launches:
+
+remote_monitor_expect.exp
+
+Example:
+
+python3 rf_site_dashboard.py \
+  --remote-script "./remote_monitor_expect.exp"
+
+Example Expect script:
+
+#!/usr/bin/expect -f
+set timeout 60
+set user "username"
+set host "192.168.1.50"
+set pass "password"
+spawn ssh -tt -o StrictHostKeyChecking=accept-new $user@$host
+expect {
+    -re ".+" {
+        set buf $expect_out(buffer)
+        if {[string match -nocase "*password:*" $buf]} {
+            send -- "$pass\r"
+        }
+        exp_continue
+    }
+    timeout { exit 1 }
+    eof { exit }
+}
+interact
+
+Make executable:
+
+chmod +x remote_monitor_expect.exp
+
+⸻
+
+Live File Monitoring
+
+The dashboard watches local folders and updates automatically.
+
+Default tabs:
+
+* Data
+* Meta
+* Logs
+
+Example:
+
+local_output/data
+local_output/meta
+local_output/logs
+
+Remote files should be copied or synced into:
+
+remote_output/data
+remote_output/meta
+remote_output/logs
+
+⸻
+
+JSON Configuration Files
+
+The right-side panels display:
+
+site2_config.json
+site3_config.json
+
+Example JSON:
+
+{
+  "site_name": "Site 3",
+  "center_frequency_hz": 102700000,
+  "sample_rate_hz": 250000,
+  "gain_db": 30,
+  "enabled": true
+}
+
+⸻
+
+Images
+
+Place PNG images in:
+
+images/
+
+Example:
+
+images/desktop.png
+images/laptop_transparent.png
+
+Transparent PNGs work best.
+
+⸻
+
+Notes
+
+* script -q -f is used for real-time terminal output
+* Remote file panels only watch local folders
+* Tested on Ubuntu with PyQt5
