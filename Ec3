@@ -1,0 +1,11 @@
+aws ec2 describe-instance-attribute `
+  --profile np-vega-dev `
+  --region us-gov-west-1 `
+  --instance-id i-0b322cace326 `
+  --attribute userData
+
+
+aws ssm describe-instance-information `
+  --profile np-vega-dev `
+  --region us-gov-west-1 `
+  --max-results 50
