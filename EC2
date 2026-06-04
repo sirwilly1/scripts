@@ -1,0 +1,12 @@
+aws ec2 describe-instances `
+  --profile np-vega-dev `
+  --region us-gov-west-1 `
+  --instance-ids i-0b322cace326 `
+  --query "Reservations[0].Instances[0].[ImageId,PlatformDetails]"
+
+
+aws ec2 describe-instances `
+  --profile np-vega-dev `
+  --region us-gov-west-1 `
+  --instance-ids i-0b322cace326 `
+  --query "Reservations[0].Instances[0].ImageId"
