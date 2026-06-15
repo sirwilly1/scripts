@@ -1,0 +1,15 @@
+{
+  "remote.SSH.remotePlatform": {
+    "xpln-bastion.entds.ngisn.com": "linux",
+    "NGC-IRAD": "linux",
+    "IRAD-Host2": "linux",
+    "IRAD-Host1": "linux",
+    "dev-user": "linux"
+  },
+  "aws.telemetry": false,
+  "aws.cloudFormation.telemetry.enabled": false,
+  "workbench.colorTheme": "Dark Modern",
+  "remote.SSH.path": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+  "remote.SSH.configFile": "C:\\Users\\YOURNAME\\.ssh\\config",
+  "remote.SSH.useLocalServer": false
+}
