@@ -1,0 +1,167 @@
+For connecting to an EC2 instance as a development environment, SSH is the most common approach, but there are several alternatives depending on what you’re trying to accomplish.
+
+1. AWS Systems Manager Session Manager (What you’re already using)
+
+VS Code → SSH → SSM → EC2
+
+Pros:
+
+* No inbound ports required
+* Works with private subnets
+* Auditable through AWS
+* Preferred in many GovCloud environments
+
+Cons:
+
+* More complicated to set up with VS Code
+* X11 forwarding can be finicky
+* Requires SSM Agent and IAM configuration
+
+⸻
+
+2. EC2 Instance Connect
+
+VS Code → SSH → EC2 Instance Connect → EC2
+
+Pros:
+
+* AWS-managed temporary SSH keys
+* No .pem files to manage
+* Simpler than SSM
+
+Cons:
+
+* Requires access to the EC2 endpoint
+* Not always available in GovCloud
+* Usually needs a public IP or bastion
+
+⸻
+
+3. Bastion Host / Jump Box
+
+VS Code → SSH → Bastion → EC2
+
+Pros:
+
+* Very common enterprise pattern
+* Works well with VS Code
+* Supports X11 forwarding easily
+
+Cons:
+
+* Need to maintain the bastion
+* Additional infrastructure to secure
+
+⸻
+
+4. NICE DCV (My recommendation if you need Firefox/UI apps)
+
+DCV Client → EC2 Desktop
+
+Pros:
+
+* Full graphical Linux desktop
+* Excellent performance
+* Supports Firefox, IDEs, terminals
+* AWS-supported
+* Works well in GovCloud
+
+Cons:
+
+* More setup initially
+* Uses a desktop paradigm rather than VS Code Remote
+
+⸻
+
+5. VS Code Tunnels
+
+VS Code Desktop → VS Code Tunnel → EC2
+
+Pros:
+
+* No SSH required
+* Very simple once installed
+* Uses your Microsoft/GitHub account
+
+Cons:
+
+* Often not allowed in government environments
+* Requires outbound internet access
+
+⸻
+
+6. AWS Cloud9
+
+Browser → Cloud9 → EC2
+
+Pros:
+
+* Browser-based IDE
+* No local setup
+
+Cons:
+
+* AWS has reduced investment in Cloud9
+* Less flexible than local VS Code
+* Many developers dislike browser IDEs
+
+⸻
+
+7. RDP/VNC to Linux
+
+Remote Desktop → Linux Desktop
+
+Pros:
+
+* Full desktop experience
+* Firefox just works
+
+Cons:
+
+* Need to secure RDP/VNC
+* Usually not preferred for development
+
+⸻
+
+For your specific situation
+
+Since you’re in AWS GovCloud, using private subnets, and your organization already has SSM configured, I’d rank them like this:
+
+For coding:
+
+1. VS Code + SSM + Remote SSH ⭐
+2. Bastion Host + SSH
+3. NICE DCV
+
+For Firefox/browser testing:
+
+1. VS Code Port Forwarding ⭐
+2. NICE DCV ⭐
+3. X11 + Xming (what you’re doing now)
+4. Bastion + X11
+
+If you were starting from scratch:
+
+I’d actually recommend:
+
+VS Code
+    ↓
+SSM Remote SSH
+    ↓
+EC2
+
+for development, and
+
+NICE DCV
+    ↓
+EC2 Linux Desktop
+
+for any graphical applications like Firefox.
+
+Given how far you’ve already gotten:
+
+* Your X11 forwarding is working.
+* Your SSM SSH setup is working.
+* The only remaining issue is getting VS Code Remote SSH to inherit the same AWS certificate settings that your terminal already has.
+
+You’re much closer to the finish line than it probably feels right now. Once that certificate issue is sorted out, you’ll have the exact setup many teams use in GovCloud environments.
