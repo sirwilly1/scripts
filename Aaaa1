@@ -1,0 +1,38 @@
+Cisco Web portal:
+UN: admin
+PW: ZAQWSX! @#$%^123456
+SDWAN-Manager:
+IP: 10.10.10.1
+UN: admin
+PW: ZAQWS! @#$%^123456
+SDWAN-Validator:
+IP: 10.10.10.2
+UN: admin
+PW: ZAQWSX! @#$%^123456
+SDWAN-Controller:
+IP: 10.10.10.3
+UN: admin
+PW: ZAQWSX! @#$%^123456
+Ubuntu VM:
+IP: 10.10.10.103
+UN: admin
+PW: ZAQWSX! @#$%^123456
+SDWAN-Router1:
+IP: 10.10.10.101
+UN: admin
+PW: ZAQWSX! @#$%^123456
+Router2:
+IP: 10.10.10.102
+UN: admin
+PW: ZAQWSX! @#$%^123456
+Blue nuc:
+IP: 192.168.1.240
+UN: engineer
+PW: workisfun
+Switch:
+IP: 192.168.1.139
+PW: Password123!
+Purple nuc (ESXI host portal):
+IP: 192.168.1.1
+UN: Engineering
+PW: WorkIsFun!@#
