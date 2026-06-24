@@ -1,0 +1,415 @@
+# Configure an NGC Development Computer for SSH Access
+
+## Overview
+
+This guide explains how to configure a Windows development machine to securely connect to AWS GovCloud EC2 instances using:
+
+- AWS CLI
+- AWS IAM Identity Center (SSO)
+- AWS Systems Manager (Session Manager)
+- OpenSSH
+- VS Code Remote SSH
+- X11 Forwarding (Optional)
+
+---
+
+# Prerequisites
+
+Install the following software before beginning.
+
+| Software | Required |
+|----------|----------|
+| AWS CLI v2 | ✅ |
+| AWS Session Manager Plugin | ✅ |
+| OpenSSH Client (Windows) | ✅ |
+| VS Code | ✅ |
+| VS Code Remote SSH Extension | ✅ |
+| AWS Toolkit for VS Code | Recommended |
+| Cygwin (for corporate certificates) | Optional |
+
+---
+
+# Step 1 - Install Required Software
+
+## AWS CLI
+
+Install the latest version of the AWS CLI.
+
+Verify installation:
+
+```powershell
+aws --version
+```
+
+---
+
+## Session Manager Plugin
+
+Install the AWS Systems Manager Session Manager Plugin.
+
+Verify installation:
+
+```powershell
+session-manager-plugin --version
+```
+
+---
+
+## VS Code
+
+Install:
+
+- Remote - SSH
+- AWS Toolkit
+
+---
+
+# Step 2 - Configure AWS CLI
+
+Create the following file if it doesn't already exist:
+
+```text
+C:\Users\<username>\.aws\config
+```
+
+Example:
+
+```ini
+[profile np-vega-dev]
+
+sso_session = np-vega-dev-test
+sso_account_id = <AWS Account ID>
+sso_role_name = POWERUSER
+region = us-gov-west-1
+ca_bundle = C:\Users\<username>\.ssh\aws_bundle.pem
+
+[sso-session np-vega-dev-test]
+
+sso_start_url = <Identity Center Start URL>
+sso_region = us-gov-west-1
+sso_registration_scopes = sso:account:access
+```
+
+### Required Values
+
+| Setting | Description |
+|----------|-------------|
+| sso_start_url | AWS Identity Center Start URL |
+| sso_account_id | AWS Account ID |
+| sso_role_name | POWERUSER or PROJADMIN |
+| region | us-gov-west-1 |
+
+---
+
+# Finding Your AWS SSO Information
+
+Navigate to:
+
+```
+https://start.us-gov-west-1.us-gov-home.awsapps.com/
+```
+
+Then:
+
+1. Select your AWS Account
+2. Click **Access Keys**
+3. Copy:
+   - Start URL
+   - Account ID
+   - Region
+   - Role Name
+
+---
+
+# Step 3 - Configure SSH
+
+Create:
+
+```text
+C:\Users\<username>\.ssh\config
+```
+
+Example:
+
+```sshconfig
+Host np-vega-dev
+
+    User ec2-user
+
+    IdentityFile C:\Users\<username>\Downloads\my-key.pem
+
+    ProxyCommand aws ssm start-session --profile np-vega-dev --target i-0123456789abcdef0 --document-name AWS-StartSSHSession
+
+    ForwardX11 yes
+    ForwardX11Trusted yes
+```
+
+Replace:
+
+- IdentityFile
+- Instance ID
+- Host name
+
+Test SSH:
+
+```bash
+ssh np-vega-dev
+```
+
+---
+
+# Step 4 - Configure VS Code
+
+Open:
+
+```text
+C:\Users\<username>\AppData\Roaming\Code\User\settings.json
+```
+
+Add:
+
+```json
+{
+    "remote.SSH.remotePlatform": {
+        "np-vega-dev": "linux"
+    },
+
+    "remote.SSH.configFile": "C:\\Users\\<username>\\.ssh\\config",
+
+    "remote.SSH.path": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+
+    "remote.SSH.useLocalServer": false,
+
+    "aws.telemetry": false,
+
+    "aws.cloudformation.telemetry.enabled": false,
+
+    "remote.SSH.environment": {
+        "PATH": "C:/Program Files/Amazon/AWSCLIV2;C:/Program Files/Amazon/SessionManagerPlugin/bin;$PATH",
+        "AWS_CA_BUNDLE": "C:/Users/<username>/.ssh/aws_bundle.pem"
+    }
+}
+```
+
+---
+
+# Step 5 - Configure PATH
+
+Ensure the Session Manager Plugin is on your PATH.
+
+Typical locations:
+
+```text
+C:\Program Files\Amazon\SessionManagerPlugin\bin
+```
+
+or
+
+```text
+C:\Users\<username>\AppData\Roaming\Code\User\globalStorage\amazonwebservices.aws-toolkit-vscode\tools\Amazon\sessionmanagerplugin\bin
+```
+
+Verify:
+
+```powershell
+session-manager-plugin --version
+```
+
+---
+
+# Step 6 - Corporate Certificate Bundle (NGC Only)
+
+> **Note**
+>
+> This step is only required if your organization uses SSL inspection (e.g. Netskope).
+
+Install **Cygwin**.
+
+Run:
+
+```bash
+openssl s_client \
+-showcerts \
+-servername ssm.us-gov-west-1.amazonaws.com \
+-connect ssm.us-gov-west-1.amazonaws.com:443
+```
+
+Extract:
+
+- AWS Server Certificate
+- Intermediate CA
+- Netskope Root CA
+
+Combine them:
+
+```bash
+cat \
+ssm-us-gov-west-1_amazonaws_com.pem \
+ca_ngc_goskope_com.pem \
+caadmin_netskope_com.pem \
+> aws_bundle.pem
+```
+
+Copy the bundle to:
+
+```text
+C:\Users\<username>\.ssh\
+```
+
+---
+
+# Step 7 - Configure AWS_CA_BUNDLE
+
+Temporary (PowerShell):
+
+```powershell
+$env:AWS_CA_BUNDLE="C:\Users\<username>\.ssh\aws_bundle.pem"
+```
+
+Permanent Windows Environment Variable:
+
+| Variable | Value |
+|----------|-------|
+| AWS_CA_BUNDLE | C:\Users\<username>\.ssh\aws_bundle.pem |
+
+---
+
+# Step 8 - Login to AWS
+
+Authenticate using AWS SSO:
+
+```powershell
+aws sso login --profile np-vega-dev
+```
+
+A browser window should open.
+
+---
+
+# Step 9 - Test Session Manager
+
+```powershell
+aws ssm start-session \
+--profile np-vega-dev \
+--target i-0123456789abcdef0
+```
+
+Expected output:
+
+```
+Starting session...
+Connected.
+```
+
+---
+
+# Step 10 - Test SSH
+
+```bash
+ssh np-vega-dev
+```
+
+SSH should automatically:
+
+1. Start an SSM Session
+2. Tunnel to the EC2 instance
+3. Authenticate with the configured private key
+
+---
+
+# Step 11 - Connect Using VS Code
+
+1. Open VS Code
+2. Press **Ctrl + Shift + P**
+3. Select **Remote-SSH: Connect to Host**
+4. Choose:
+
+```
+np-vega-dev
+```
+
+VS Code should connect through Session Manager.
+
+---
+
+# Troubleshooting
+
+## Session Manager Plugin Not Found
+
+```powershell
+session-manager-plugin --version
+```
+
+Verify the plugin is installed and included in the PATH.
+
+---
+
+## AWS SSO Login Fails
+
+```powershell
+aws sso login --profile np-vega-dev
+```
+
+Verify:
+
+- Start URL
+- Region
+- Account ID
+- Role Name
+
+---
+
+## SSH Connection Hangs
+
+Test Session Manager directly:
+
+```powershell
+aws ssm start-session --profile np-vega-dev --target <instance-id>
+```
+
+If this fails, SSH will also fail.
+
+---
+
+## Permission Denied (Public Key)
+
+Verify:
+
+- Correct PEM file
+- Correct EC2 username (`ec2-user`, `dev-user`, etc.)
+- Instance was launched using that key pair
+
+---
+
+## VS Code Cannot Connect
+
+Verify:
+
+- `remote.SSH.configFile`
+- `remote.SSH.path`
+- `remote.SSH.useLocalServer = false`
+- Session Manager Plugin is installed
+- `AWS_CA_BUNDLE` is configured if required
+
+---
+
+# File Locations
+
+| File | Location |
+|------|----------|
+| AWS Config | `C:\Users\<username>\.aws\config` |
+| SSH Config | `C:\Users\<username>\.ssh\config` |
+| VS Code Settings | `C:\Users\<username>\AppData\Roaming\Code\User\settings.json` |
+| AWS CA Bundle | `C:\Users\<username>\.ssh\aws_bundle.pem` |
+
+---
+
+# Useful Commands
+
+| Command | Purpose |
+|----------|---------|
+| `aws sso login --profile np-vega-dev` | Authenticate with AWS |
+| `aws ssm start-session --profile np-vega-dev --target <instance-id>` | Test Session Manager |
+| `ssh np-vega-dev` | Connect to EC2 |
+| `session-manager-plugin --version` | Verify Session Manager Plugin |
+| `aws --version` | Verify AWS CLI |
