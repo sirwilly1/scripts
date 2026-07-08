@@ -1,0 +1,482 @@
+I’d implement it as two pipelines:
+
+1. UI repo CI builds/tests the UI and publishes an immutable container image.
+2. Manifests/CD repo receives the image digest and deploys it to the right environment based on branch rules.
+
+The main change from the notes is: remove Docker Compose from CI/CD. Compose can remain for local dev temporarily, but CI should use native GitLab jobs, a pinned CI/dev image, and a production Dockerfile.
+
+⸻
+
+1. Target repo layout
+
+ui-repo/
+  Dockerfile
+  nginx.conf
+  package.json
+  package-lock.json | pnpm-lock.yaml
+  .gitlab-ci.yml
+  ci/
+    Dockerfile
+    environment.yml          # only if Conda is still needed
+    conda-lock.yml           # preferred for deterministic Conda envs
+
+For the CD side:
+
+manifests-repo/
+  apps/
+    ui/
+      base/
+        deployment.yaml
+        service.yaml
+        ingress.yaml
+        kustomization.yaml
+      overlays/
+        dev/
+          kustomization.yaml
+        staging/
+          kustomization.yaml
+        prod-high/
+          kustomization.yaml
+
+Do not create a low-side prod overlay if the rule is “main deploys nothing on low side.”
+
+⸻
+
+2. Production UI container
+
+Use a multi-stage Dockerfile: build the static UI, then serve it with Nginx.
+
+# Dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+FROM nginx:1.27-alpine AS runtime
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget -qO- http://localhost:8080/healthz || exit 1
+CMD ["nginx", "-g", "daemon off;"]
+
+Example nginx.conf for an SPA:
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
+}
+
+The production image should not contain Conda, dev tooling, test dependencies, or Docker Compose.
+
+⸻
+
+3. CI/dev container
+
+If Tasking UI used Conda to stabilize tooling, keep that pattern only in the CI/dev image.
+
+Example:
+
+# ci/Dockerfile
+FROM mambaorg/micromamba:1.5.10
+USER root
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    ca-certificates \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+COPY ci/environment.yml /tmp/environment.yml
+RUN micromamba install -y -n base -f /tmp/environment.yml \
+    && micromamba clean -a -y
+ENV PATH=/opt/conda/bin:$PATH
+ENV CI=true
+ENV TZ=UTC
+WORKDIR /workspace
+
+Example ci/environment.yml:
+
+name: ui-ci
+channels:
+  - conda-forge
+dependencies:
+  - nodejs=20
+  - python=3.11
+  - pip
+  - git
+
+Best practice would be to generate a lock file:
+
+conda-lock -f ci/environment.yml -p linux-64
+
+Then build from the lock file instead of a floating environment. The goal is that local dev, CI, and the GitLab runner all use the same dependency universe.
+
+⸻
+
+4. GitLab CI pipeline
+
+This version does the following:
+
+* Builds/tests using the CI image.
+* Builds the production UI image.
+* Pushes the image to GitLab Container Registry.
+* Emits the immutable image digest.
+* Updates the manifests repo only on allowed branches.
+
+stages:
+  - test
+  - build
+  - publish
+  - deploy
+variables:
+  APP_IMAGE: "$CI_REGISTRY_IMAGE/ui"
+  CI_IMAGE: "$CI_REGISTRY_IMAGE/ci:stable"
+  DOCKERFILE_PATH: "$CI_PROJECT_DIR/Dockerfile"
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+default:
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+test_ui:
+  stage: test
+  image: "$CI_IMAGE"
+  tags:
+    - shared-runner
+  script:
+    - npm ci
+    - npm run lint
+    - npm run typecheck
+    - npm run test:ci
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+build_ui_image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  tags:
+    - shared-runner
+  script:
+    - mkdir -p /kaniko/.docker
+    - >
+      echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}"
+      > /kaniko/.docker/config.json
+    - >
+      /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --dockerfile "$DOCKERFILE_PATH"
+      --destination "$APP_IMAGE:$CI_COMMIT_SHA"
+      --destination "$APP_IMAGE:$CI_COMMIT_REF_SLUG"
+      --digest-file image-digest.txt
+    - echo "IMAGE_REF=$APP_IMAGE@$(cat image-digest.txt)" > image.env
+  artifacts:
+    reports:
+      dotenv: image.env
+    paths:
+      - image-digest.txt
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+deploy_dev:
+  stage: deploy
+  image: alpine:3.20
+  tags:
+    - shared-runner
+  needs:
+    - job: build_ui_image
+      artifacts: true
+  variables:
+    TARGET_ENV: dev
+  before_script:
+    - apk add --no-cache git yq
+    - git config --global user.email "gitlab-ci@example.internal"
+    - git config --global user.name "GitLab CI"
+  script:
+    - git clone "https://oauth2:${MANIFESTS_TOKEN}@${MANIFESTS_REPO_URL}" manifests
+    - cd manifests/apps/ui/overlays/dev
+    - yq -i '.images[0].newName = strenv(APP_IMAGE) | .images[0].digest = env(IMAGE_REF | split("@")[1])' kustomization.yaml
+    - cd ../../../../
+    - git add apps/ui/overlays/dev/kustomization.yaml
+    - git commit -m "Deploy UI ${CI_COMMIT_SHORT_SHA} to dev"
+    - git push origin HEAD:main
+  environment:
+    name: dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^feature\//'
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+deploy_staging:
+  stage: deploy
+  image: alpine:3.20
+  tags:
+    - shared-runner
+  needs:
+    - job: build_ui_image
+      artifacts: true
+  variables:
+    TARGET_ENV: staging
+  before_script:
+    - apk add --no-cache git yq
+    - git config --global user.email "gitlab-ci@example.internal"
+    - git config --global user.name "GitLab CI"
+  script:
+    - git clone "https://oauth2:${MANIFESTS_TOKEN}@${MANIFESTS_REPO_URL}" manifests
+    - cd manifests/apps/ui/overlays/staging
+    - yq -i '.images[0].newName = strenv(APP_IMAGE) | .images[0].digest = env(IMAGE_REF | split("@")[1])' kustomization.yaml
+    - cd ../../../../
+    - git add apps/ui/overlays/staging/kustomization.yaml
+    - git commit -m "Deploy UI ${CI_COMMIT_SHORT_SHA} to staging"
+    - git push origin HEAD:main
+  environment:
+    name: staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release\//'
+deploy_prod_high:
+  stage: deploy
+  image: alpine:3.20
+  tags:
+    - shared-runner
+  needs:
+    - job: build_ui_image
+      artifacts: true
+  variables:
+    TARGET_ENV: prod-high
+  before_script:
+    - apk add --no-cache git yq
+    - git config --global user.email "gitlab-ci@example.internal"
+    - git config --global user.name "GitLab CI"
+  script:
+    - git clone "https://oauth2:${MANIFESTS_TOKEN}@${MANIFESTS_REPO_URL}" manifests
+    - cd manifests/apps/ui/overlays/prod-high
+    - yq -i '.images[0].newName = strenv(APP_IMAGE) | .images[0].digest = env(IMAGE_REF | split("@")[1])' kustomization.yaml
+    - cd ../../../../
+    - git add apps/ui/overlays/prod-high/kustomization.yaml
+    - git commit -m "Deploy UI ${CI_COMMIT_SHORT_SHA} to prod-high"
+    - git push origin HEAD:main
+  environment:
+    name: prod-high
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $SIDE == "high"'
+      when: manual
+
+You would define these protected GitLab variables:
+
+MANIFESTS_REPO_URL
+MANIFESTS_TOKEN
+SIDE                 # high or low
+
+For production, MANIFESTS_TOKEN should be protected and only available on protected branches.
+
+⸻
+
+5. Manifest example
+
+Base deployment:
+
+# manifests-repo/apps/ui/base/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasking-ui
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tasking-ui
+  template:
+    metadata:
+      labels:
+        app: tasking-ui
+    spec:
+      containers:
+        - name: tasking-ui
+          image: registry.example.com/group/ui-repo/ui:placeholder
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+
+Base kustomization:
+
+# manifests-repo/apps/ui/base/kustomization.yaml
+resources:
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+Dev overlay:
+
+# manifests-repo/apps/ui/overlays/dev/kustomization.yaml
+resources:
+  - ../../base
+nameSuffix: -dev
+images:
+  - name: registry.example.com/group/ui-repo/ui
+    newName: registry.example.com/group/ui-repo/ui
+    digest: sha256:placeholder
+
+Staging and prod-high would be the same pattern with environment-specific ingress, config, replica count, resource limits, etc.
+
+⸻
+
+6. Runner strategy
+
+Use the shared runner first because it is available 24/7. The existing GitLab EC2 runners that shut down at 7 PM are a bad dependency for CD.
+
+Recommended runner model:
+
+shared-runner
+  Used for normal CI jobs:
+  - install
+  - lint
+  - unit test
+  - image build
+  - manifest update
+high-side-runner
+  Used only for high-side deploy jobs if direct cluster access is required.
+low-side-runner
+  Used only for low-side deploy jobs if direct low-side access is required.
+
+If you need dynamic runners, make them stateless and container-native:
+
+GitLab job
+  -> autoscaled runner
+  -> pulls CI image
+  -> runs tests/builds
+  -> disappears
+
+The runner host should not contain custom dependencies. All dependencies should come from:
+
+ci/Dockerfile
+package-lock.json / pnpm-lock.yaml
+conda-lock.yml
+container registry
+GitLab variables/secrets
+
+That is the piece that makes dynamic runners viable.
+
+⸻
+
+7. Branch-to-environment mapping
+
+Based on your notes, I would implement this:
+
+Branch pattern	CI behavior	CD behavior
+feature/*	lint, typecheck, deterministic unit tests, build image	deploy to dev, optional/manual if dev is shared
+dev	full dev CI	deploy to dev
+release/*	full CI + integration/smoke tests	deploy to staging
+main on low side	build/test only	no production deploy
+main on high side	build/test	manual deploy to prod-high
+
+The important part is that prod deploy should be both:
+
+main branch only
+high side only
+manual or approval-gated
+
+⸻
+
+8. Testing strategy
+
+For dev branches, keep CI deterministic:
+
+npm ci
+npm run lint
+npm run typecheck
+npm run test:ci
+
+Make the test environment stable:
+
+TZ=UTC
+CI=true
+fixed random seeds
+mocked API responses
+no live external service dependency
+locked npm/Conda dependencies
+
+Suggested tiers:
+
+Feature branches:
+  lint
+  typecheck
+  unit tests with mocks
+  container build
+Dev:
+  same as feature
+  deploy to dev
+  smoke test the deployed UI
+Release:
+  full test suite
+  staging deploy
+  browser/e2e tests against staging
+Main:
+  full test suite
+  image publish
+  high-side prod deploy only after approval
+
+For UI e2e, use something like Playwright, but keep it controlled: seeded data, mocked backend where possible, and no tests that depend on wall-clock timing or mutable external state.
+
+⸻
+
+9. Conda decision
+
+I would make this rule explicit:
+
+Conda is allowed in the CI/dev image.
+Conda is not allowed in the production UI image unless the UI runtime actually requires it.
+
+For a normal static UI, production should be:
+
+Nginx + static files
+
+not:
+
+Node + Conda + build tools + dev dependencies
+
+That keeps the runtime image smaller, safer, and easier to promote across low/high environments.
+
+⸻
+
+10. Practical implementation order
+
+I would do it in this order:
+
+1. Create the production Dockerfile and nginx.conf.
+2. Build and run the UI locally with Docker, not Compose.
+3. Create the CI/dev image and push it to the GitLab registry.
+4. Replace Compose-based CI jobs with native GitLab jobs.
+5. Add deterministic test jobs.
+6. Add Kaniko or BuildKit image publishing.
+7. Create the manifests repo structure.
+8. Add branch-to-environment deploy jobs.
+9. Move deployment credentials into protected GitLab variables.
+10. Add runner tags for shared, high-side, and low-side execution.
+11. Make prod-high deployment manual/approval-gated.
+
+The minimum viable path is: Dockerfile + Nginx + GitLab CI test/build/push + manifests repo update. Then add dynamic runners and stricter high/low-side separation after the basic pipeline is working.
