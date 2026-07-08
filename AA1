@@ -1,0 +1,178 @@
+Do it as 2 repos/pipelines: one for CI/build/test, one for CD/manifests/deploy.
+
+1. Replace Docker Compose with Dockerfile
+
+Repo structure:
+
+ui-app/
+  Dockerfile
+  nginx.conf
+  package.json
+  src/
+  .gitlab-ci.yml
+
+Example UI web-server container:
+
+# Build UI
+FROM node:20 AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+# Serve UI
+FROM nginx:alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080
+
+nginx.conf:
+
+server {
+  listen 8080;
+  server_name localhost;
+  root /usr/share/nginx/html;
+  index index.html;
+  location / {
+    try_files $uri /index.html;
+  }
+}
+
+2. CI pipeline builds/tests/publishes image
+
+.gitlab-ci.yml in the UI repo:
+
+stages:
+  - test
+  - build
+  - publish
+variables:
+  IMAGE_NAME: "$CI_REGISTRY_IMAGE/ui"
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+default:
+  image: node:20
+  tags:
+    - shared-runner
+test:
+  stage: test
+  script:
+    - npm ci
+    - npm run lint
+    - npm test -- --runInBand
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+build_container:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t "$IMAGE_NAME:$IMAGE_TAG" .
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+publish_container:
+  stage: publish
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$IMAGE_NAME:$IMAGE_TAG" .
+    - docker push "$IMAGE_NAME:$IMAGE_TAG"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+3. CD repo owns deployment manifests
+
+Separate repo:
+
+ui-deploy/
+  manifests/
+    dev/
+      deployment.yaml
+      service.yaml
+      ingress.yaml
+    staging/
+    prod/
+  .gitlab-ci.yml
+
+Example deployment.yaml:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ui-web
+  template:
+    metadata:
+      labels:
+        app: ui-web
+    spec:
+      containers:
+        - name: ui-web
+          image: registry.example.com/group/ui-app/ui:REPLACE_IMAGE_TAG
+          ports:
+            - containerPort: 8080
+
+4. CD pipeline deploys by branch
+
+stages:
+  - deploy
+deploy_dev:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context "$DEV_CONTEXT"
+    - kubectl apply -f manifests/dev/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+deploy_staging:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context "$STAGING_CONTEXT"
+    - kubectl apply -f manifests/staging/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "staging"'
+deploy_prod:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context "$PROD_CONTEXT"
+    - kubectl apply -f manifests/prod/'
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+There’s a typo above: remove the trailing quote:
+
+kubectl apply -f manifests/prod/
+
+Recommended flow
+
+feature branch
+  ↓
+CI test + build only
+dev branch
+  ↓
+CI test + build + publish
+  ↓
+CD deploy to dev
+staging/release branch
+  ↓
+CD deploy to staging
+main
+  ↓
+manual deploy to prod/high side
+
+What you should propose
+
+Say the implementation approach is:
+
+“We will replace Docker Compose with native GitLab CI container builds. CI will build and test the UI container using a deterministic test strategy, publish tagged images to the GitLab registry from approved branches, and use a separate manifest-based CD repository to deploy environment-specific Kubernetes manifests. Shared runners should be used for standard CI, with dynamic or environment-specific runners evaluated for high-side/low-side differences.”
