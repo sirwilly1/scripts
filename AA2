@@ -1,0 +1,289 @@
+Here’s the more detailed execution plan.
+
+Step 1: Containerize the UI
+
+Create a real Dockerfile for the UI app instead of relying on Docker Compose.
+
+Goal:
+Build the UI into static files, then serve it from a small web server container.
+Inputs:
+- UI source code
+- package.json / lock file
+- nginx.conf or equivalent web server config
+Output:
+- A runnable UI image
+
+Test locally first:
+
+docker build -t tasking-ui:local .
+docker run --rm -p 8080:8080 tasking-ui:local
+
+Then open:
+
+http://localhost:8080
+
+⸻
+
+Step 2: Make CI deterministic
+
+CI should not depend on someone’s laptop, Docker Compose, or manually installed tools.
+
+Use fixed versions:
+
+image: node:20
+
+Run the same commands every time:
+
+npm ci
+npm run lint
+npm test
+npm run build
+
+Avoid:
+
+npm install
+
+because it can change dependency versions.
+
+CI should fail if:
+
+- dependencies do not install cleanly
+- lint fails
+- tests fail
+- the UI does not build
+- the container image cannot build
+
+⸻
+
+Step 3: Build the container in GitLab CI
+
+Add jobs like this:
+
+stages:
+  - validate
+  - test
+  - build
+  - publish
+validate:
+  image: node:20
+  stage: validate
+  script:
+    - npm ci
+    - npm run lint
+test:
+  image: node:20
+  stage: test
+  script:
+    - npm ci
+    - npm test
+build_ui:
+  image: node:20
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+
+Then build the image:
+
+build_container:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+
+⸻
+
+Step 4: Publish image to GitLab registry
+
+Only publish from approved branches.
+
+publish_container:
+  stage: publish
+  image: docker:27
+  services:
+    - docker:27-dind
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+    - if: '$CI_COMMIT_BRANCH == "release"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+That gives you image tags like:
+
+registry.gitlab.com/group/tasking-ui:a1b2c3d
+
+⸻
+
+Step 5: Create a separate CD/manifest repo
+
+This repo should not build the app. It should only deploy known images.
+
+Example:
+
+tasking-ui-manifests/
+  dev/
+    deployment.yaml
+    service.yaml
+    ingress.yaml
+  staging/
+    deployment.yaml
+    service.yaml
+    ingress.yaml
+  prod/
+    deployment.yaml
+    service.yaml
+    ingress.yaml
+  .gitlab-ci.yml
+
+Each environment can have different values:
+
+dev:
+- fewer replicas
+- dev namespace
+- dev URL
+staging:
+- staging namespace
+- release candidate image
+prod:
+- manual approval
+- high-side deployment rules
+
+⸻
+
+Step 6: Update Kubernetes deployment image
+
+Example deployment.yaml:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasking-ui
+  namespace: tasking-dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tasking-ui
+  template:
+    metadata:
+      labels:
+        app: tasking-ui
+    spec:
+      containers:
+        - name: tasking-ui
+          image: registry.gitlab.com/group/tasking-ui:IMAGE_TAG
+          ports:
+            - containerPort: 8080
+
+The CD pipeline replaces IMAGE_TAG with the actual commit SHA.
+
+sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" dev/deployment.yaml
+kubectl apply -f dev/
+
+⸻
+
+Step 7: CD branch rules
+
+Use branch-to-environment mapping:
+
+feature/*  → no deploy
+dev        → deploy dev
+release/*  → deploy staging
+main       → manual prod deploy
+
+Example:
+
+deploy_dev:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context "$DEV_CONTEXT"
+    - sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" dev/deployment.yaml
+    - kubectl apply -f dev/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+deploy_prod:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context "$PROD_CONTEXT"
+    - sed -i "s/IMAGE_TAG/$IMAGE_TAG/g" prod/deployment.yaml
+    - kubectl apply -f prod/
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+⸻
+
+Step 8: Runner strategy
+
+Use the shared runner for normal CI:
+
+lint
+unit tests
+container build
+image publish
+
+Use environment-specific runners for deployments:
+
+dev runner      → deploys to dev
+staging runner  → deploys to staging
+prod/high-side runner → deploys to prod/high-side
+
+Reason:
+
+CI can run anywhere trusted.
+CD should run only where it has network access and credentials for that environment.
+
+⸻
+
+Step 9: Low-side vs high-side plan
+
+Low-side/dev:
+
+- normal GitLab registry
+- shared runner okay
+- automatic deploy to dev
+
+High-side/prod:
+
+- separate registry or promoted image import
+- locked-down runner
+- manual approval
+- no automatic feature branch deploy
+- deployment only from main or signed release tag
+
+Recommended prod rule:
+
+rules:
+  - if: '$CI_COMMIT_BRANCH == "main"'
+    when: manual
+
+⸻
+
+Step 10: Final pipeline flow
+
+Developer pushes feature branch
+        ↓
+CI runs lint/test/build
+        ↓
+Merge to dev
+        ↓
+CI publishes container image
+        ↓
+CD deploys dev manifests
+        ↓
+Promote to release/staging
+        ↓
+CD deploys staging
+        ↓
+Merge/tag main
+        ↓
+Manual CD deploy to prod/high-side
+
+The core idea: CI proves and packages the app. CD deploys an already-built image using environment-specific manifests.
