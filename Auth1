@@ -1,0 +1,47 @@
+auth:
+  # Provider used by default
+  defaultProvider: keycloak
+
+  providers:
+    keycloak:
+      type: oidc
+      displayName: Keycloak
+
+      issuer: https://keycloak.example.com/realms/my-realm
+      clientId: my-application
+      clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+
+      redirectUrl: https://app.example.com/auth/callback/keycloak
+
+      scopes:
+        - openid
+        - profile
+        - email
+
+    casport:
+      type: casport
+      displayName: CASPORT
+
+      baseUrl: https://casport.example.com
+      clientId: my-application
+      clientSecret: ${CASPORT_CLIENT_SECRET}
+
+      # Attribute used to match the Keycloak user to CASPORT
+      userIdentifier: username
+
+session:
+  storage: redis
+
+  cookie:
+    name: app_session
+    secure: true
+    httpOnly: true
+    sameSite: lax
+
+  timeoutMinutes: 30
+
+authorization:
+  provider: casport
+
+  # Fail closed if CASPORT cannot make a decision
+  denyWhenUnavailable: true
