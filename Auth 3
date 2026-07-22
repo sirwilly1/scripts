@@ -1,0 +1,87 @@
+# Authentication-provider interface
+
+interface AuthenticationProvider {
+  readonly id: string;
+
+  getCapabilities(): {
+    protocol: "oidc" | "saml" | "custom";
+    supportsRefresh: boolean;
+    supportsProviderLogout: boolean;
+    supportsMfaContext: boolean;
+  };
+
+  beginLogin(request: LoginRequest): Promise<RedirectResponse>;
+
+  completeLogin(
+    callback: AuthenticationCallback
+  ): Promise<ExternalIdentity>;
+
+  refresh(
+    credentials: ProviderCredentials
+  ): Promise<RefreshedCredentials>;
+
+  beginLogout(
+    session: ProviderSession,
+    returnUrl: string
+  ): Promise<RedirectResponse | null>;
+}
+
+# Normalized authentication result
+
+interface ExternalIdentity {
+  provider: string;
+  issuer: string;
+  subject: string;
+  username?: string;
+  displayName?: string;
+  email?: string;
+  organization?: string;
+  authenticatedAt: string;
+  assuranceLevel?: string;
+  providerSessionId?: string;
+}
+
+
+# Authorization-provider interface
+
+interface AuthorizationProvider {
+  readonly id: string;
+
+  resolvePrincipal(
+    identity: ExternalIdentity
+  ): Promise<NormalizedPrincipal>;
+
+  getEntitlements(
+    principal: NormalizedPrincipal,
+    context?: RequestContext
+  ): Promise<EntitlementSet>;
+
+  authorize(
+    principal: NormalizedPrincipal,
+    action: string,
+    resource: ResourceDescriptor,
+    context?: RequestContext
+  ): Promise<AuthorizationDecision>;
+}
+
+
+# Example normalized model:
+
+interface NormalizedPrincipal {
+  userId: string;
+  username?: string;
+  organization?: string;
+  roles: string[];
+  groups: string[];
+  attributes: Record<string, string[]>;
+  assuranceLevel?: string;
+}
+
+interface AuthorizationDecision {
+  allowed: boolean;
+  reasonCode: string;
+  policyVersion?: string;
+  expiresAt?: string;
+}
+
+
