@@ -1,0 +1,158 @@
+User Authentication Design
+
+Page summary
+
+This design provides a secure and flexible way to handle user login and access control.
+
+* Keycloak is used for authentication.
+* CASPORT is used for authorization.
+* The browser uses a secure session cookie and does not store access or refresh tokens.
+* The Authentication Gateway handles login, logout, sessions, provider communication, and user identity mapping.
+* Application APIs enforce access rules for every request.
+
+The design is provider-neutral, so other OIDC, SAML, or authorization services can be added later without changing the UI or core application logic.
+
+⸻
+
+1. Architecture diagram
+
+This diagram shows the main components.
+
+The Browser UI communicates with the Authentication Gateway using secure /auth and /api endpoints.
+
+The Authentication Gateway:
+
+* handles login, logout, and callbacks;
+* stores sessions securely;
+* protects against CSRF;
+* connects to authentication and authorization providers;
+* converts provider-specific data into a standard application format.
+
+Authentication adapters support Keycloak, generic OIDC, SAML, and future providers.
+
+Authorization adapters support CASPORT, Keycloak roles, and other policy services.
+
+Application APIs validate the user and enforce permissions.
+
+⸻
+
+2. Authorization-provider interface
+
+This interface defines how the application works with CASPORT or another authorization service.
+
+It performs three main tasks:
+
+* resolvePrincipal — maps the authenticated user to an application user;
+* getEntitlements — gets roles, groups, permissions, or attributes;
+* authorize — checks whether the user can perform an action on a resource.
+
+NormalizedPrincipal provides one standard user format, regardless of which provider supplied the data.
+
+AuthorizationDecision returns:
+
+* whether access is allowed;
+* the reason for the decision;
+* the policy version;
+* when the decision expires.
+
+⸻
+
+3. Authentication-provider interface
+
+This interface defines how the application works with Keycloak or another identity provider.
+
+It supports:
+
+* starting login;
+* processing the login callback;
+* refreshing credentials;
+* logging out;
+* reporting provider capabilities.
+
+After login, the provider returns an ExternalIdentity containing information such as:
+
+* provider;
+* issuer;
+* subject;
+* username;
+* email;
+* authentication time;
+* assurance level.
+
+The application then maps this identity to its own internal user.
+
+⸻
+
+4. Configuration example
+
+The configuration selects:
+
+* Keycloak as the authentication provider;
+* CASPORT as the authorization provider;
+* Redis for server-side session storage;
+* secure, HttpOnly session cookies;
+* a fail-closed policy when CASPORT is unavailable.
+
+The configuration also defines how a Keycloak user is matched to a CASPORT user.
+
+A stable identifier such as employee ID is preferable to username or email.
+
+⸻
+
+5. Authentication flow
+
+The user opens the application and selects a login provider.
+
+The browser is redirected to Keycloak, where the user authenticates.
+
+After successful login:
+
+1. Keycloak redirects back to the Authentication Gateway.
+2. The gateway validates the response.
+3. The user identity is normalized.
+4. CASPORT provides roles, attributes, or permissions.
+5. A secure application session is created.
+6. The user returns to the application.
+
+If authentication fails, the user sees an error and can try again.
+
+⸻
+
+6. Sign-in screen
+
+The sign-in screen provides buttons for configured identity providers.
+
+The UI should only start the login process. It should not store tokens or call Keycloak or CASPORT directly.
+
+A CASPORT sign-in button should only be shown if CASPORT actually authenticates users. If CASPORT is authorization-only, it should work in the background after Keycloak login.
+
+Local email and password fields should only be included if the application is expected to manage its own user credentials.
+
+⸻
+
+How everything connects
+
+User opens application
+    ↓
+Browser starts login
+    ↓
+Authentication Gateway redirects to Keycloak
+    ↓
+Keycloak authenticates the user
+    ↓
+Gateway validates and normalizes the identity
+    ↓
+CASPORT provides authorization information
+    ↓
+Gateway creates a secure session
+    ↓
+Application APIs enforce permissions
+
+Main design principles
+
+* Keep tokens out of the browser.
+* Separate authentication from authorization.
+* Use adapters so providers can be replaced.
+* Convert provider data into one standard application model.
+* Enforce permissions in APIs, not only in the UI.
+* Deny access when authorization cannot be confirmed.
