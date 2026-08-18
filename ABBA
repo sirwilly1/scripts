@@ -1,0 +1,124 @@
+# React Log Display Options: Pros and Cons
+
+## Objective
+
+The application needs to display logs and operational events retrieved from a backend service within the React UI. This capability should complement Grafana, not duplicate it. Grafana will remain the primary platform for system-wide observability, dashboards, log analysis, and troubleshooting.
+
+The application-level requirement is to provide users with a contextual history of events for a specific site or instance and to highlight events that may affect mission health.
+
+Two approaches were evaluated:
+
+1. `@melloware/react-logviewer`
+2. TanStack Table + TanStack Virtual + custom React UI
+
+---
+
+## Option 1: `@melloware/react-logviewer`
+
+`@melloware/react-logviewer` is a React component designed specifically for displaying log output in a traditional console-style interface. It provides a straightforward way to expose backend logs within the application with relatively little custom development.
+
+### Pros
+
+- Purpose-built for displaying logs in React.
+- Lower implementation effort than a custom solution.
+- Supports efficient rendering of large log outputs.
+- Can support live or streamed log data.
+- Provides a familiar console-style experience for technical users.
+- Works well as a lightweight application-level log view while Grafana remains the primary observability platform.
+
+### Cons
+
+- Primarily designed for raw text logs rather than structured operational events.
+- Mission-health classification and alerting logic would still need to be implemented separately.
+- Less flexible for site-specific event timelines, status views, or richer operational workflows.
+- Raw logs may expose more technical detail than some users need.
+- Filtering by site, severity, component, or event type may require additional custom logic.
+- Events that need to be elevated into alerts would likely require separate UI components.
+
+### Assessment
+
+`@melloware/react-logviewer` is a strong option when the primary goal is to provide a **traditional embedded log viewer with minimal development effort**.
+
+It is best suited for scenarios where users primarily need access to raw or lightly processed logs.
+
+---
+
+## Option 2: TanStack Table + TanStack Virtual + Custom React UI
+
+This approach combines **TanStack Table** for structured data management, **TanStack Virtual** for efficient rendering of large datasets, and custom React components for presentation and mission-specific behavior.
+
+Rather than displaying logs as raw text, events can be represented as structured data with fields such as:
+
+- Timestamp
+- Site
+- Severity
+- Component
+- Message
+- Status
+- Event type
+
+### Pros
+
+- Strong fit for structured operational logs and events.
+- Supports flexible sorting, filtering, column configuration, and expandable rows.
+- Efficiently handles large event histories through virtualization.
+- Provides full control over mission-health behavior and presentation.
+- Important events can be highlighted, grouped, or promoted into alerts based on severity, keywords, site, or event type.
+- Integrates cleanly with an existing React design system because TanStack is headless.
+- Supports concise event summaries with expandable raw log or JSON details.
+- Well suited for site- or instance-specific operational history.
+- Complements Grafana by focusing on user-relevant events rather than broad observability.
+- Provides flexibility for future capabilities such as acknowledgments, contextual actions, or links to Grafana.
+
+### Cons
+
+- Requires more implementation effort than a dedicated log-viewer component.
+- The presentation layer must be designed and maintained internally.
+- Search, severity styling, loading states, event expansion, and alert treatment require custom implementation.
+- Combining TanStack Table and TanStack Virtual requires careful handling of scrolling, row sizing, and expandable content.
+- Traditional log-viewer capabilities such as tail/follow mode, ANSI rendering, and raw-text highlighting would need to be added separately if required.
+- More custom behavior results in a larger testing and maintenance surface.
+
+### Assessment
+
+TanStack Table + TanStack Virtual + custom React UI is a stronger fit when the goal is to provide a **structured, site-specific mission-health event history** rather than a raw log console.
+
+It offers significantly more control over what information users see and how important events are presented, at the cost of higher implementation effort.
+
+---
+
+## Comparison
+
+| Area | `@melloware/react-logviewer` | TanStack Table + Virtual + Custom UI |
+|---|---|---|
+| Primary use case | Raw log viewing | Structured operational events |
+| Development effort | Lower | Higher |
+| Large dataset support | Strong | Strong |
+| Sorting and filtering | Limited / custom | Strong |
+| Mission-health highlighting | Custom | Strong |
+| Alert integration | Separate / custom | Natural fit |
+| Site-specific event history | Moderate | Strong |
+| Traditional log-console experience | Strong | Custom implementation |
+| Design-system integration | Moderate | Strong |
+| Flexibility | Moderate | Very high |
+| Maintenance effort | Lower | Higher |
+
+---
+
+## Recommendation
+
+For the stated use case, **TanStack Table + TanStack Virtual + custom React UI is the stronger long-term fit**.
+
+The requirement extends beyond simply displaying logs. The application needs to provide site- or instance-specific context, retain relevant event history, identify operationally significant events, and potentially elevate those events when they affect mission health.
+
+`@melloware/react-logviewer` remains a good option if the priority is to provide a **simple embedded log console quickly and with minimal custom development**.
+
+### Decision Summary
+
+**Choose `@melloware/react-logviewer` when the primary need is:**
+
+> Show me the logs for this site or instance.
+
+**Choose TanStack Table + TanStack Virtual + custom React UI when the primary need is:**
+
+> Show me what happened, what is relevant to this site or user, and what requires attention.
